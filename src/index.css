@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sac-dark-blue: #003b75;
+    --sac-logo-blue: #0063a6;
+    --sac-active-bg: #e1f0fa;
+    --sac-light-gray: #f5f7f9;
+    --gray-border: #e0e0e0;
+    --text-main: #333333;
+    --text-muted: #666666;
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: "Open Sans", "Segoe UI", Arial, sans-serif;
+    background-color: #ffffff;
+    color: #333333;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #f5f7f9; }
+  ::-webkit-scrollbar-thumb { background: #c8d6e5; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #0063a6; }
+}
+
+@layer components {
+  /* Card base — white, gray border, sharp corners */
+  .sac-card {
+    background: #ffffff;
+    border: 1px solid var(--gray-border);
+    padding: 24px;
+  }
+
+  /* Tab active state */
+  .tab-active {
+    background-color: var(--sac-active-bg);
+    color: var(--sac-dark-blue);
+    border-bottom: 3px solid var(--sac-logo-blue);
+  }
+
+  .tab-inactive {
+    color: var(--sac-dark-blue);
+    border-bottom: 3px solid transparent;
+  }
+  .tab-inactive:hover {
+    background-color: var(--sac-light-gray);
+  }
+
+  /* Info/instruction box — light blue bg with left border */
+  .info-box {
+    background: var(--sac-light-gray);
+    border-left: 3px solid var(--sac-logo-blue);
+    padding: 12px 16px;
+    font-size: 0.9rem;
+    color: #444;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .scrollbar-thin { scrollbar-width: thin; }
+
+  /* Leaflet — light theme */
+  .leaflet-container {
+    background: #f5f7f9 !important;
+  }
+  .leaflet-control-attribution {
+    font-size: 0.65rem;
+    color: #666;
+    background: rgba(255,255,255,0.85);
+  }
+  .leaflet-tile {
+    filter: none;
+  }
+}
+
+.motion-reduce-container * {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
