@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  base: '/NTSB_Aviation_Research_Explorer/',
   plugins: [react()],
   resolve: {
     alias: {
