@@ -13,7 +13,7 @@ try {
   }
 } catch {}
 
-const RPC_URL     = process.env.GETBLOCK_RPC_URL     || "";
+const RPC_URL     = process.env.GETBLOCK_RPC_URL     || "https://rpc-amoy.polygon.technology/";
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 
 export default {
