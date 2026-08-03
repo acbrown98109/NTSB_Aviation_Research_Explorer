@@ -127,6 +127,7 @@
   .block-card.accident-block { border-left: 3px solid var(--red); }
   .block-card.pilot-block { border-left: 3px solid var(--green); }
   .block-card.genesis-block { border-left: 3px solid var(--gold); }
+  .block-card.maintenance-block { border-left: 3px solid #8b5cf6; }
   .block-top { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; flex-wrap: wrap; }
   .block-num { font-size: .7rem; color: var(--muted); font-family: monospace; }
   .block-type-label { font-size: .72rem; font-weight: 700; padding: .15rem .5rem; border-radius: 4px; letter-spacing: .06em; text-transform: uppercase; }
@@ -226,12 +227,43 @@
   .minting { animation: mint .6s cubic-bezier(.34,1.56,.64,1) both; }
 
   /* tabs */
-  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
-  .tab { padding: .65rem 1.25rem; font-size: .85rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); transition: all .2s; }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; overflow-x: auto; }
+  .tab { padding: .65rem 1.25rem; font-size: .85rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); transition: all .2s; white-space: nowrap; }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
   .tab-pane { display: none; }
   .tab-pane.active { display: block; }
+
+  /* ── Maintenance ── */
+  .maint-form { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+  .maint-form h4 { font-size: .9rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: .5rem; }
+  .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; }
+  .form-group { display: flex; flex-direction: column; gap: .3rem; }
+  .form-group.full { grid-column: span 2; }
+  .form-group label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+  .form-group input, .form-group select, .form-group textarea {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: .55rem .75rem; border-radius: 8px; font-size: .85rem; outline: none;
+    transition: border-color .2s; font-family: inherit;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
+  .form-group select option { background: var(--surface); }
+  .form-group textarea { resize: vertical; min-height: 72px; }
+  .signer-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+  .signer-box .label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: .5rem; }
+  .signer-row { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+  .key-display { font-family: 'Courier New', monospace; font-size: .68rem; color: var(--hash); word-break: break-all; flex: 1; line-height: 1.4; }
+  .key-none { font-size: .8rem; color: var(--muted); font-style: italic; }
+  .sig-display { font-family: 'Courier New', monospace; font-size: .65rem; color: var(--green); word-break: break-all; line-height: 1.4; }
+  .maint-record { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid #8b5cf6; border-radius: 10px; padding: .875rem 1rem; margin-bottom: 12px; }
+  .maint-record .block-node { background: rgba(139,92,246,.15); border-color: #8b5cf6; color: #8b5cf6; }
+  .block-type-label.maintenance { background: rgba(139,92,246,.2); color: #8b5cf6; }
+  .block-node.maintenance { background: rgba(139,92,246,.15); border-color: #8b5cf6; color: #8b5cf6; }
+  .sig-verified { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700; padding: .2rem .5rem; border-radius: 4px; }
+  .sig-verified.ok { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+  .sig-verified.fail { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
+  .key-mgr { display: flex; gap: .5rem; flex-wrap: wrap; }
+  @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .form-group.full { grid-column: span 1; } }
 </style>
 </head>
 <body>
@@ -303,6 +335,11 @@
         <div class="stat-val green" id="statPilots">0</div>
         <div class="stat-sub">FAA airmen records</div>
       </div>
+      <div class="stat-card" style="display:none" id="statMaintCard">
+        <div class="stat-label">Maintenance Blocks</div>
+        <div class="stat-val" style="color:#8b5cf6" id="statMaint">0</div>
+        <div class="stat-sub">Signed on-chain records</div>
+      </div>
     </div>
 
     <div id="resultArea"></div>
@@ -317,6 +354,7 @@
       <button class="ledger-filter" onclick="filterLedger('ownership',this)">Ownership</button>
       <button class="ledger-filter" onclick="filterLedger('accident',this)">Accidents</button>
       <button class="ledger-filter" onclick="filterLedger('pilot',this)">Pilots</button>
+      <button class="ledger-filter" onclick="filterLedger('maintenance',this)">Maintenance</button>
     </div>
     <div id="ledgerTable">
       <div class="empty"><div class="empty-icon">📒</div><h3>No blocks yet</h3><p>Search an N-number to mint its first coin.</p></div>
@@ -337,6 +375,7 @@
           <li><strong style="color:var(--text)">FAA Airmen Inquiry API</strong> — <code>amsrvs.registry.faa.gov/airmeninquiry/</code> — Pilot certificates, ratings, medical class</li>
           <li><strong style="color:var(--text)">FAA RelayFlight</strong> — Registry history endpoints for prior owners</li>
         </ul>
+        <p><strong style="color:#8b5cf6">Signed Maintenance Records</strong> — Each aircraft coin supports appending signed maintenance blocks. Generate an ECDSA P-256 keypair (runs entirely in-browser, private key never exported), fill in the maintenance form (work order, ATA chapter, technician, airframe hours, etc.), and click "Sign &amp; Append." The block is ECDSA-signed over SHA-256, the signature and public key are embedded in the block, and the block hash chains to the previous tip. Any block can be re-verified independently by anyone holding the public key. Export blocks as JSON for external audit or FAA/IA review.</p>
         <p><strong style="color:var(--hash)">Cryptographic Integrity</strong> — All hashes use the Web Crypto API (SubtleCrypto SHA-256) running entirely in your browser. No data is sent to any third-party server. The chain is verifiable client-side.</p>
         <p><strong style="color:var(--orange)">Public Record Notice</strong> — All data displayed is sourced from U.S. federal public records databases maintained by the FAA and NTSB under public record law. Aircraft registration (14 CFR Part 47), accident reports (49 U.S.C. § 1131), and airmen records are public information.</p>
       </div>
@@ -353,7 +392,7 @@
 // ── Global Ledger ──────────────────────────────────────────────
 const globalLedger = [];   // all blocks across all aircraft
 const mintedCoins  = {};   // keyed by N-number
-let sessionStats   = { minted:0, blocks:0, accidents:0, pilots:0 };
+let sessionStats   = { minted:0, blocks:0, accidents:0, pilots:0, maintenance:0 };
 
 // ── SHA-256 via SubtleCrypto ───────────────────────────────────
 async function sha256(str) {
@@ -687,6 +726,12 @@ function updateStats() {
   document.getElementById('statBlocks').textContent    = sessionStats.blocks;
   document.getElementById('statAccidents').textContent = sessionStats.accidents;
   document.getElementById('statPilots').textContent    = sessionStats.pilots;
+  if (sessionStats.maintenance > 0) {
+    document.getElementById('statMaintCard').style.display = '';
+    document.getElementById('statMaint').textContent = sessionStats.maintenance;
+    // Expand stats bar to 5 columns when maintenance exists
+    document.querySelector('.stats-bar').style.gridTemplateColumns = 'repeat(5,1fr)';
+  }
 }
 
 function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
@@ -767,6 +812,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
       <div class="tab active" onclick="switchTab('chain','${nNum}',this)">⛓ Chain of Ownership (${chain.length})</div>
       <div class="tab" onclick="switchTab('accidents','${nNum}',this)">⚠ Accidents (${accidents.length})</div>
       <div class="tab" onclick="switchTab('pilots','${nNum}',this)">👤 Pilots / Airmen (${airmen.length})</div>
+      <div class="tab" onclick="switchTab('maintenance','${nNum}',this)">🔧 Maintenance Records</div>
       <div class="tab" onclick="switchTab('raw','${nNum}',this)">{ } Raw API Data</div>
     </div>
 
@@ -779,6 +825,9 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
     <div id="tab-pilots-${nNum.replace(/\W/g,'')}" class="tab-pane">
       ${renderPilotsPanel(airmen, pilotResult)}
     </div>
+    <div id="tab-maintenance-${nNum.replace(/\W/g,'')}" class="tab-pane">
+      ${renderMaintenancePanel(nNum)}
+    </div>
     <div id="tab-raw-${nNum.replace(/\W/g,'')}" class="tab-pane">
       ${renderRawData(faaResult, ntsbResult, pilotResult)}
     </div>
@@ -786,7 +835,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
 }
 
 function renderChain(chain) {
-  const typeIcon = { genesis:'⛏', ownership:'📋', accident:'⚠', pilot:'👤', update:'🔄' };
+  const typeIcon = { genesis:'⛏', ownership:'📋', accident:'⚠', pilot:'👤', update:'🔄', maintenance:'🔧' };
   return `
   <div class="chain-title">Immutable Block Chain</div>
   <div class="chain">
@@ -845,6 +894,28 @@ function renderBlockBody(b) {
       <div class="detail-row"><span class="dk">Fatal:</span><span class="dv">${d.fatalCount??'—'}</span></div>
       <div class="detail-row"><span class="dk">Damage:</span><span class="dv">${d.aircraftDamage||'—'}</span></div>
       <div class="detail-row"><span class="dk">Phase:</span><span class="dv">${d.phase||'—'}</span></div>
+    </div>`;
+  }
+  if (b.type === 'maintenance') {
+    return `<div class="detail-grid">
+      <div class="detail-row"><span class="dk">Work Order:</span><span class="dv">${d.workOrder||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Date:</span><span class="dv">${d.date||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Type:</span><span class="dv">${d.maintType||'—'}</span></div>
+      <div class="detail-row"><span class="dk">ATA Chapter:</span><span class="dv">${d.ataChapter||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Tech / IA:</span><span class="dv">${d.techName||'—'} ${d.iaCert?'(IA: '+d.iaCert+')':''}</span></div>
+      <div class="detail-row"><span class="dk">AMO / Shop:</span><span class="dv">${d.amo||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Airframe Hrs:</span><span class="dv">${d.airframeHours||'—'}</span></div>
+      <div class="detail-row"><span class="dk">TSO:</span><span class="dv">${d.tso||'—'}</span></div>
+      ${d.description?`<div class="detail-row" style="grid-column:span 2"><span class="dk">Description:</span><span class="dv">${d.description}</span></div>`:''}
+      ${d.parts?`<div class="detail-row" style="grid-column:span 2"><span class="dk">Parts / PNs:</span><span class="dv">${d.parts}</span></div>`:''}
+      <div class="detail-row" style="grid-column:span 2">
+        <span class="dk">Signature:</span>
+        <span class="dv" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          <span class="sig-verified ${d.sigVerified?'ok':'fail'}">${d.sigVerified?'✓ ECDSA VERIFIED':'⚠ UNVERIFIED'}</span>
+          <span style="font-family:monospace;font-size:.65rem;color:var(--hash);word-break:break-all">${(d.signature||'').substring(0,48)}…</span>
+        </span>
+      </div>
+      <div class="detail-row" style="grid-column:span 2"><span class="dk">Signer PubKey:</span><span class="dv" style="font-family:monospace;font-size:.65rem;color:var(--hash);word-break:break-all">${(d.signerPubKey||'').substring(0,64)}…</span></div>
     </div>`;
   }
   if (b.type === 'pilot') {
@@ -1013,6 +1084,7 @@ function ledgerSummary(b) {
   if (b.type === 'ownership')  return `Owner: ${d.owner||'—'}${d.from?' ('+d.from+' → '+(d.to||'present')+')':''}`;
   if (b.type === 'accident')   return `NTSB ${d.eventId||'—'} · ${d.date||'—'} · ${d.injuries||'—'}`;
   if (b.type === 'pilot')      return `Pilot: ${d.name||'—'} · ${d.certType||'—'}`;
+  if (b.type === 'maintenance') return `Maint: ${d.maintType||'—'} · ${d.date||'—'} · ${d.techName||'—'} ${d.sigVerified?'[✓ SIGNED]':''}`;
   return JSON.stringify(d).substring(0, 60);
 }
 
@@ -1024,6 +1096,376 @@ function quickLook(n) {
 
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard!'));
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MAINTENANCE RECORD SIGNING — ECDSA P-256 via SubtleCrypto
+// ════════════════════════════════════════════════════════════════
+
+// Per-aircraft keypairs stored in session (never leaves browser)
+const aircraftKeys = {};   // nNum -> { privateKey, publicKey, pubKeyHex, pubKeyJwk }
+
+// Generate a fresh ECDSA P-256 keypair for signing maintenance records
+async function generateSigningKey(nNum) {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,   // extractable so we can export & display
+    ['sign', 'verify']
+  );
+  // Export public key as hex for display / chain storage
+  const pubSpki  = await crypto.subtle.exportKey('spki', pair.publicKey);
+  const pubHex   = Array.from(new Uint8Array(pubSpki)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const pubJwk   = await crypto.subtle.exportKey('jwk', pair.publicKey);
+
+  aircraftKeys[nNum] = { privateKey: pair.privateKey, publicKey: pair.publicKey, pubKeyHex, pubJwk };
+  refreshKeyDisplay(nNum);
+}
+
+// Import a public key from hex (for verification of blocks you received externally)
+async function importPubKeyFromHex(hex) {
+  const bytes = new Uint8Array(hex.match(/.{2}/g).map(h=>parseInt(h,16)));
+  return crypto.subtle.importKey('spki', bytes.buffer, { name:'ECDSA', namedCurve:'P-256' }, true, ['verify']);
+}
+
+// Sign a data object with the aircraft's private key, return base64url signature
+async function signData(nNum, dataObj) {
+  const keys = aircraftKeys[nNum];
+  if (!keys) throw new Error('No keypair for ' + nNum);
+  const encoded = new TextEncoder().encode(JSON.stringify(dataObj));
+  const sigBuf  = await crypto.subtle.sign({ name:'ECDSA', hash:'SHA-256' }, keys.privateKey, encoded);
+  return btoa(String.fromCharCode(...new Uint8Array(sigBuf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+// Verify an ECDSA signature against a public key (hex) and data object
+async function verifySignature(pubKeyHex, dataObj, signatureB64url) {
+  try {
+    const pubKey   = await importPubKeyFromHex(pubKeyHex);
+    const encoded  = new TextEncoder().encode(JSON.stringify(dataObj));
+    const sigBytes = Uint8Array.from(atob(signatureB64url.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+    return crypto.subtle.verify({ name:'ECDSA', hash:'SHA-256' }, pubKey, sigBytes, encoded);
+  } catch { return false; }
+}
+
+function refreshKeyDisplay(nNum) {
+  const key = nNum.replace(/\W/g,'');
+  const el  = document.getElementById('keyDisplay-' + key);
+  if (!el) return;
+  const k = aircraftKeys[nNum];
+  if (k) {
+    el.innerHTML = `<span class="key-display">${k.pubKeyHex}</span>`;
+    document.getElementById('keyActions-'+key).innerHTML = `
+      <button class="btn btn-ghost btn-sm" onclick="exportPubKey('${nNum}')">⬇ Export PubKey</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateSigningKey('${nNum}')">↺ Rotate Key</button>`;
+  }
+}
+
+function exportPubKey(nNum) {
+  const k = aircraftKeys[nNum];
+  if (!k) return;
+  const blob = new Blob([JSON.stringify({ nNumber: nNum, algorithm:'ECDSA-P256', pubKeyHex: k.pubKeyHex, pubKeyJwk: k.pubJwk, exported: new Date().toISOString() }, null, 2)], { type:'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `avichain-pubkey-${nNum}.json` });
+  a.click();
+}
+
+// ── Add a signed maintenance block to an aircraft's chain ──────
+async function addMaintenanceBlock(nNum) {
+  const key     = nNum.replace(/\W/g,'');
+  const coin    = mintedCoins[nNum];
+  if (!coin) return;
+
+  const get = id => (document.getElementById(id+'-'+key)||{}).value || '';
+
+  const maintData = {
+    workOrder:    get('maint-wo'),
+    date:         get('maint-date'),
+    maintType:    get('maint-type'),
+    ataChapter:   get('maint-ata'),
+    description:  get('maint-desc'),
+    techName:     get('maint-tech'),
+    iaCert:       get('maint-ia'),
+    amo:          get('maint-amo'),
+    airframeHours:get('maint-hours'),
+    tso:          get('maint-tso'),
+    parts:        get('maint-parts'),
+    nNumber:      nNum,
+    recordedAt:   new Date().toISOString(),
+  };
+
+  // Validate required fields
+  if (!maintData.date || !maintData.maintType || !maintData.description) {
+    showMaintError(key, 'Date, maintenance type, and description are required.');
+    return;
+  }
+
+  // Sign if keypair exists
+  let signature    = '';
+  let signerPubKey = '';
+  let sigVerified  = false;
+  const kp = aircraftKeys[nNum];
+  if (kp) {
+    try {
+      signature    = await signData(nNum, maintData);
+      signerPubKey = kp.pubKeyHex;
+      sigVerified  = await verifySignature(signerPubKey, maintData, signature);
+    } catch(e) {
+      showMaintError(key, 'Signing failed: ' + e.message);
+      return;
+    }
+  }
+
+  // Build block
+  const prevHash = coin.chain[coin.chain.length - 1].hash;
+  const block = await makeBlock('maintenance', {
+    ...maintData,
+    signature,
+    signerPubKey,
+    sigVerified,
+    source: 'AviChain Signed Maintenance Record',
+  }, prevHash, coin.chain.length);
+
+  coin.chain.push(block);
+  // Recompute merkle root
+  coin.merkleRoot = await computeMerkleRoot(coin.chain.map(b => b.hash));
+  globalLedger.push({ ...block, nNum });
+
+  sessionStats.blocks++;
+  sessionStats.maintenance++;
+  updateStats();
+
+  // Clear form
+  ['wo','date','type','ata','desc','tech','ia','amo','hours','tso','parts'].forEach(f => {
+    const el = document.getElementById('maint-'+f+'-'+key);
+    if (el) el.value = '';
+  });
+
+  // Re-render maintenance tab
+  const pane = document.getElementById('tab-maintenance-'+key);
+  if (pane) pane.innerHTML = renderMaintenancePanel(nNum);
+
+  // Also refresh chain tab count label
+  const chainTab = document.querySelector(`[onclick*="switchTab('chain','${nNum}'"]`);
+  if (chainTab) chainTab.textContent = `⛓ Chain of Ownership (${coin.chain.length})`;
+
+  // Show success
+  showMaintSuccess(key, block);
+}
+
+function showMaintError(key, msg) {
+  const el = document.getElementById('maintMsg-'+key);
+  if (el) { el.className = 'error-box'; el.textContent = msg; el.style.display = ''; }
+}
+
+function showMaintSuccess(key, block) {
+  const el = document.getElementById('maintMsg-'+key);
+  if (el) {
+    el.className = 'verify-banner';
+    el.style.display = '';
+    el.innerHTML = `<div class="verify-icon">✅</div>
+      <div class="verify-text">
+        <div class="verify-title">Maintenance block #${block.index} signed and appended to chain</div>
+        <div class="verify-hash">Block hash: ${block.hash}</div>
+        <div class="verify-hash">Sig: ${block.data.signature ? block.data.signature.substring(0,48)+'…' : 'unsigned'}</div>
+      </div>`;
+    setTimeout(() => { if (el) el.style.display = 'none'; }, 8000);
+  }
+}
+
+// ── Render maintenance panel ───────────────────────────────────
+function renderMaintenancePanel(nNum) {
+  const key  = nNum.replace(/\W/g,'');
+  const coin = mintedCoins[nNum];
+  const maintBlocks = (coin?.chain || []).filter(b => b.type === 'maintenance');
+  const hasKey = !!aircraftKeys[nNum];
+  const keyHex = hasKey ? aircraftKeys[nNum].pubKeyHex : '';
+
+  const ataChapters = [
+    '05 - Time Limits / Maintenance Checks', '06 - Dimensions and Areas', '07 - Lifting and Shoring',
+    '08 - Leveling and Weighing', '11 - Placards and Markings', '12 - Servicing',
+    '21 - Air Conditioning', '22 - Auto Flight', '23 - Communications', '24 - Electrical Power',
+    '25 - Equipment / Furnishings', '26 - Fire Protection', '27 - Flight Controls',
+    '28 - Fuel', '29 - Hydraulic Power', '30 - Ice and Rain Protection',
+    '31 - Indicating / Recording Systems', '32 - Landing Gear', '33 - Lights',
+    '34 - Navigation', '35 - Oxygen', '36 - Pneumatic', '38 - Water / Waste',
+    '49 - Airborne APU', '51 - Structures', '52 - Doors', '53 - Fuselage', '54 - Nacelles / Pylons',
+    '55 - Stabilizers', '56 - Windows', '57 - Wings',
+    '61 - Propellers', '71 - Powerplant', '72 - Engine (Turbine/Turboprop)',
+    '73 - Engine Fuel and Control', '74 - Ignition', '75 - Air', '76 - Engine Controls',
+    '77 - Engine Indicating', '78 - Exhaust', '79 - Oil', '80 - Starting',
+  ];
+
+  const maintTypes = [
+    'Annual Inspection (14 CFR 91.409)',
+    '100-Hour Inspection (14 CFR 91.409)',
+    'Progressive Inspection',
+    'Altimeter/Transponder Check (14 CFR 91.411/413)',
+    'ELT Battery / Inspection (14 CFR 91.207)',
+    'AD Compliance — Airworthiness Directive',
+    'SB Compliance — Service Bulletin',
+    'Engine Overhaul / TBO',
+    'Prop Overhaul',
+    'Avionics Repair / Install',
+    'Structural Repair',
+    'Unscheduled Repair',
+    'Weight and Balance Update',
+    'Logbook Entry — Oil Change / Fluid Service',
+    'Other Scheduled Maintenance',
+  ];
+
+  return `
+  <!-- Key Management -->
+  <div class="signer-box" style="margin-bottom:1rem">
+    <div class="label">🔑 Signing Identity — ECDSA P-256 Keypair (session)</div>
+    <div style="margin-bottom:.5rem;font-size:.78rem;color:var(--muted)">
+      Generate a keypair to cryptographically sign each maintenance block. The private key never leaves your browser.
+      The public key is embedded in every block you sign and can be shared for independent verification.
+    </div>
+    <div class="signer-row">
+      <div style="flex:1" id="keyDisplay-${key}">
+        ${hasKey
+          ? `<span class="key-display">${keyHex}</span>`
+          : `<span class="key-none">No keypair generated — blocks will be recorded unsigned</span>`}
+      </div>
+    </div>
+    <div class="key-mgr" style="margin-top:.75rem" id="keyActions-${key}">
+      ${hasKey
+        ? `<button class="btn btn-ghost btn-sm" onclick="exportPubKey('${nNum}')">⬇ Export PubKey</button>
+           <button class="btn btn-ghost btn-sm" onclick="generateSigningKey('${nNum}')">↺ Rotate Key</button>`
+        : `<button class="btn btn-primary btn-sm" onclick="generateSigningKey('${nNum}')">⚡ Generate Signing Keypair</button>`}
+    </div>
+  </div>
+
+  <!-- Add Record Form -->
+  <div class="maint-form">
+    <h4>🔧 Add Signed Maintenance Record</h4>
+    <div id="maintMsg-${key}" style="display:none"></div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Work Order / Logbook Ref</label>
+        <input id="maint-wo-${key}" type="text" placeholder="WO-2024-0042 or logbook page">
+      </div>
+      <div class="form-group">
+        <label>Date of Work *</label>
+        <input id="maint-date-${key}" type="date">
+      </div>
+      <div class="form-group">
+        <label>Maintenance Type *</label>
+        <select id="maint-type-${key}">
+          <option value="">— Select type —</option>
+          ${maintTypes.map(t=>`<option value="${t}">${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>ATA Chapter</label>
+        <select id="maint-ata-${key}">
+          <option value="">— Select ATA chapter —</option>
+          ${ataChapters.map(a=>`<option value="${a}">${a}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Technician Name</label>
+        <input id="maint-tech-${key}" type="text" placeholder="First Last">
+      </div>
+      <div class="form-group">
+        <label>IA Certificate # (if annual/100hr)</label>
+        <input id="maint-ia-${key}" type="text" placeholder="FAA IA cert number">
+      </div>
+      <div class="form-group">
+        <label>AMO / Repair Station</label>
+        <input id="maint-amo-${key}" type="text" placeholder="Shop name or RSRS cert #">
+      </div>
+      <div class="form-group">
+        <label>Airframe Total Hours</label>
+        <input id="maint-hours-${key}" type="number" min="0" step="0.1" placeholder="e.g. 3842.5">
+      </div>
+      <div class="form-group">
+        <label>Engine TSO (hrs since overhaul)</label>
+        <input id="maint-tso-${key}" type="number" min="0" step="0.1" placeholder="e.g. 412.3">
+      </div>
+      <div class="form-group">
+        <label>Parts / Part Numbers Used</label>
+        <input id="maint-parts-${key}" type="text" placeholder="e.g. Lycoming LW-12279, AN960-10">
+      </div>
+      <div class="form-group full">
+        <label>Work Description / Findings *</label>
+        <textarea id="maint-desc-${key}" rows="3"
+          placeholder="Describe work performed, findings, corrective actions, and return to airworthy status statement…"></textarea>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <button class="btn btn-gold" onclick="addMaintenanceBlock('${nNum}')">
+        ⛓ Sign &amp; Append to Chain
+      </button>
+      ${hasKey
+        ? `<span style="font-size:.75rem;color:var(--green)">✓ Will be ECDSA-signed with your P-256 keypair</span>`
+        : `<span style="font-size:.75rem;color:var(--orange)">⚠ No keypair — block will be recorded unsigned. Generate a keypair above to enable signing.</span>`}
+    </div>
+  </div>
+
+  <!-- Existing maintenance blocks -->
+  ${maintBlocks.length === 0
+    ? `<div class="empty" style="padding:2rem"><div class="empty-icon">🔧</div>
+        <h3>No Maintenance Records On Chain</h3>
+        <p>Fill in the form above and click "Sign &amp; Append to Chain" to record the first maintenance block for ${nNum}.</p>
+       </div>`
+    : `<div class="chain-title">Signed Maintenance Blocks (${maintBlocks.length})</div>
+       <div class="chain">
+         ${maintBlocks.map((b, i) => `
+         <div class="block">
+           <div class="block-connector">
+             <div class="block-node maintenance">🔧</div>
+             <div class="block-line${i===maintBlocks.length-1?' last':''}"></div>
+           </div>
+           <div class="block-card maint-record maintenance-block">
+             <div class="block-top">
+               <span class="block-num">#${b.index}</span>
+               <span class="block-type-label maintenance">MAINTENANCE</span>
+               <span class="block-type-label ${b.data.maintType?.includes('Annual')?'genesis':b.data.maintType?.includes('AD')?'accident':'pilot'}"
+                 style="font-size:.65rem">${(b.data.maintType||'').split(' ')[0]||'OTHER'}</span>
+               <span class="sig-verified ${b.data.sigVerified?'ok':'fail'}">${b.data.sigVerified?'✓ ECDSA SIGNED':'UNSIGNED'}</span>
+               <span class="block-ts">${new Date(b.ts).toLocaleString()}</span>
+             </div>
+             <div class="block-body">${renderBlockBody(b)}</div>
+             <div class="block-hashes">
+               <div class="block-hash-row"><span class="hl">HASH&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="hv">${b.hash}</span></div>
+               <div class="block-hash-row"><span class="hl">PREV&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="hv prev">${b.prevHash}</span></div>
+               ${b.data.signature?`<div class="block-hash-row"><span class="hl">SIG&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="sig-display">${b.data.signature}</span></div>`:''}
+               ${b.data.signerPubKey?`<div class="block-hash-row"><span class="hl">PUBKEY&nbsp;&nbsp;</span><span class="hv" style="color:var(--hash)">${b.data.signerPubKey.substring(0,64)}…</span></div>`:''}
+             </div>
+             <div style="margin-top:.5rem">
+               <button class="btn btn-ghost btn-sm" onclick="verifyBlockSig('${nNum}',${b.index})">🔍 Re-verify Signature</button>
+               <button class="btn btn-ghost btn-sm" onclick="exportMaintenanceBlock('${nNum}',${b.index})">⬇ Export Block JSON</button>
+             </div>
+           </div>
+         </div>`).join('')}
+       </div>`}`;
+}
+
+// Re-verify a specific block's ECDSA signature on demand
+async function verifyBlockSig(nNum, blockIndex) {
+  const coin  = mintedCoins[nNum];
+  const block = coin?.chain.find(b => b.index === blockIndex);
+  if (!block || !block.data.signature || !block.data.signerPubKey) {
+    alert('Block has no signature to verify.'); return;
+  }
+  const { signature, signerPubKey, ...dataToVerify } = block.data;
+  const ok = await verifySignature(signerPubKey, dataToVerify, signature);
+  alert(ok
+    ? '✅ ECDSA signature VALID.\nThis block was signed by the holder of the listed public key and has not been tampered with.'
+    : '❌ ECDSA signature INVALID.\nThe block data may have been modified after signing.');
+}
+
+// Export a single maintenance block as JSON for external audit
+function exportMaintenanceBlock(nNum, blockIndex) {
+  const coin  = mintedCoins[nNum];
+  const block = coin?.chain.find(b => b.index === blockIndex);
+  if (!block) return;
+  const payload = { avichain: true, version: '1.0', nNumber: nNum, block, merkleRoot: coin.merkleRoot, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `avichain-maint-${nNum}-block${blockIndex}.json` });
+  a.click();
 }
 
 // ── Kick off ───────────────────────────────────────────────────
