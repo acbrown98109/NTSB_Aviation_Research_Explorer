@@ -1,13 +1,13 @@
-import hre from "hardhat";
+import { ethers } from "hardhat";
 
 async function main() {
-  const [deployer] = await hre.ethers.getSigners();
+  const [deployer] = await ethers.getSigners();
   console.log("Deploying AviChainAnchor with account:", deployer.address);
 
-  const balance = await hre.ethers.provider.getBalance(deployer.address);
-  console.log("Account balance:", hre.ethers.formatEther(balance), "MATIC");
+  const balance = await ethers.provider.getBalance(deployer.address);
+  console.log("Account balance:", ethers.formatEther(balance), "MATIC");
 
-  const AviChainAnchor = await hre.ethers.getContractFactory("AviChainAnchor");
+  const AviChainAnchor = await ethers.getContractFactory("AviChainAnchor");
   const contract = await AviChainAnchor.deploy();
   await contract.waitForDeployment();
 

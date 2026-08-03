@@ -1,9 +1,9 @@
-import "@nomicfoundation/hardhat-ethers";
+import HardhatEthers from "@nomicfoundation/hardhat-ethers";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
-// Manual .env parse for ESM
+// Load .env manually (ESM — no dotenv require)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 try {
   const env = readFileSync(resolve(__dirname, ".env"), "utf8");
@@ -17,6 +17,7 @@ const RPC_URL     = process.env.GETBLOCK_RPC_URL     || "";
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 
 export default {
+  plugins: [HardhatEthers],
   solidity: {
     version: "0.8.20",
     settings: { optimizer: { enabled: true, runs: 200 } },
