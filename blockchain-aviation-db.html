@@ -259,6 +259,20 @@
   .maint-record .block-node { background: rgba(139,92,246,.15); border-color: #8b5cf6; color: #8b5cf6; }
   .block-type-label.maintenance { background: rgba(139,92,246,.2); color: #8b5cf6; }
   .block-node.maintenance { background: rgba(139,92,246,.15); border-color: #8b5cf6; color: #8b5cf6; }
+  .block-node.flightlog { background: rgba(6,182,212,.15); border-color: var(--accent2); color: var(--accent2); }
+  .block-node.hourslog  { background: rgba(245,158,11,.15); border-color: var(--gold); color: var(--gold); }
+  .block-type-label.flightlog { background: rgba(6,182,212,.2); color: var(--accent2); }
+  .block-type-label.hourslog  { background: rgba(245,158,11,.2); color: var(--gold); }
+  .block-card.flightlog-block { border-left: 3px solid var(--accent2); }
+  .block-card.hourslog-block  { border-left: 3px solid var(--gold); }
+  .flight-table { width:100%; border-collapse:collapse; font-size:.8rem; margin-top:.5rem; }
+  .flight-table th { text-align:left; color:var(--muted); font-size:.7rem; text-transform:uppercase; letter-spacing:.07em; padding:.4rem .6rem; border-bottom:1px solid var(--border); }
+  .flight-table td { padding:.5rem .6rem; border-bottom:1px solid rgba(30,45,69,.5); }
+  .flight-table tr:last-child td { border-bottom:none; }
+  .flight-table tr:hover td { background:rgba(255,255,255,.02); }
+  .hours-hero { text-align:center; padding:1.5rem; background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(245,158,11,.08)); border:1px solid var(--border); border-radius:12px; margin-bottom:1.5rem; }
+  .hours-big { font-size:2.5rem; font-weight:700; color:var(--accent2); font-variant-numeric:tabular-nums; }
+  .hours-label { font-size:.8rem; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; margin-top:.25rem; }
   .sig-verified { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700; padding: .2rem .5rem; border-radius: 4px; }
   .sig-verified.ok { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
   .sig-verified.fail { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
@@ -338,7 +352,12 @@
       <div class="stat-card" style="display:none" id="statMaintCard">
         <div class="stat-label">Maintenance Blocks</div>
         <div class="stat-val" style="color:#8b5cf6" id="statMaint">0</div>
-        <div class="stat-sub">SDRs, 337s, ADs, logbook</div></div>
+        <div class="stat-sub">SDRs, 337s, ADs, logbook</div>
+      </div>
+      <div class="stat-card" style="display:none" id="statFlightCard">
+        <div class="stat-label">Operating Hours</div>
+        <div class="stat-val" style="color:var(--accent2)" id="statFlightHours">0h</div>
+        <div class="stat-sub">Closed flight plans (30-day)</div>
       </div>
     </div>
 
@@ -355,6 +374,8 @@
       <button class="ledger-filter" onclick="filterLedger('accident',this)">Accidents</button>
       <button class="ledger-filter" onclick="filterLedger('pilot',this)">Pilots</button>
       <button class="ledger-filter" onclick="filterLedger('maintenance',this)">Maintenance</button>
+      <button class="ledger-filter" onclick="filterLedger('flightlog',this)">Flight Plans</button>
+      <button class="ledger-filter" onclick="filterLedger('hourslog',this)">Hours Log</button>
     </div>
     <div id="ledgerTable">
       <div class="empty"><div class="empty-icon">📒</div><h3>No blocks yet</h3><p>Search an N-number to mint its first coin.</p></div>
@@ -374,6 +395,8 @@
           <li><strong style="color:var(--text)">NTSB CAROL API</strong> — <code>data.ntsb.gov/carol-main-public/api/</code> — Accident/incident reports cross-referenced by N-number</li>
           <li><strong style="color:var(--text)">FAA Airmen Inquiry API</strong> — <code>amsrvs.registry.faa.gov/airmeninquiry/</code> — Pilot certificates, ratings, medical class</li>
           <li><strong style="color:var(--text)">FAA RelayFlight</strong> — Registry history endpoints for prior owners</li>
+          <li><strong style="color:var(--text)">OpenSky Network</strong> — <code>opensky-network.org/api/flights/aircraft</code> — Public ADS-B flight history by ICAO24 Mode-S hex, 30-day rolling window; used to compute block time / operating hours from closed flight plans</li>
+          <li><strong style="color:var(--text)">ADS-B Exchange</strong> — <code>globe.adsbexchange.com/re-api/</code> — Live ADS-B position data by N-number registration</li>
         </ul>
         <p><strong style="color:#8b5cf6">Maintenance Records — Public Record</strong> — Maintenance data is fetched from three FAA public sources and recorded as plaintext blocks on the chain, identical to ownership and accident data:
           <ul style="padding-left:1.5rem;margin-top:.4rem;display:flex;flex-direction:column;gap:.3rem;font-size:.85rem;color:var(--muted)">
@@ -384,6 +407,8 @@
           Manual logbook entries (14 CFR §91.417) can also be appended as blocks — stored plaintext, no encryption, same as all other public record fields.
         </p>
         <p><strong style="color:var(--hash)">Cryptographic Integrity</strong> — SHA-256 block hashing via the browser's SubtleCrypto API links every block to the one before it. No data is encrypted or obscured — hashing is used solely for tamper-detection, not privacy. The full chain and Merkle root are verifiable client-side.</p>
+        <p><strong style="color:var(--accent2)">Flight Plans &amp; Operating Hours</strong> — Each aircraft's N-number is converted to its ICAO24 Mode-S hex code using the FAA sequential allocation algorithm. Closed flight plans from the OpenSky Network (30-day rolling ADS-B window) are recorded as <em>flightlog</em> blocks — departure airport, arrival airport, block-off / block-on timestamps, and computed block time. A summary <em>hourslog</em> block accumulates total operating hours for the coin. All flight data is public ADS-B; no encryption applied.</p>
+        <p><strong style="color:var(--gold)">Autonomous Public Record</strong> — AviChain is a self-updating, ownerless immutable record. No individual owns a coin or controls its chain. Every block is appended automatically from public federal APIs whenever an N-number is queried. The chain grows as public records grow — new accidents, new ownership transfers, new maintenance filings, new flight hours — without any user needing to sign or authorize updates. The record is the public record.</p>
         <p><strong style="color:var(--orange)">Public Record Notice</strong> — All data is sourced from U.S. federal public record databases. Aircraft registration (14 CFR Part 47), accident reports (49 U.S.C. §1131), airmen records, maintenance entries (14 CFR §91.417 / Part 43), Form 337s, SDRs, and ADs are public information. No data is encrypted.</p>
       </div>
     </div>
@@ -399,7 +424,7 @@
 // ── Global Ledger ──────────────────────────────────────────────
 const globalLedger = [];   // all blocks across all aircraft
 const mintedCoins  = {};   // keyed by N-number
-let sessionStats   = { minted:0, blocks:0, accidents:0, pilots:0, maintenance:0 };
+let sessionStats   = { minted:0, blocks:0, accidents:0, pilots:0, maintenance:0, flightHours:0 };
 
 // ── SHA-256 via SubtleCrypto ───────────────────────────────────
 async function sha256(str) {
@@ -449,6 +474,109 @@ async function fetchNTSBAccidents(nNum) {
   } catch(e) {
     return { source: 'NTSB_CAROL', ok: false, error: e.message, accidents: [] };
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  N-NUMBER → ICAO24 MODE-S HEX CONVERSION
+//  FAA assigns Mode S addresses sequentially based on N-number.
+//  Algorithm: 601 codes per numeric base (1 bare + 24 one-letter
+//  + 576 two-letter) starting at 0xA00001.
+//  Suffix alphabet: A-Z excluding I and O (24 chars).
+// ════════════════════════════════════════════════════════════════
+const ICAO_SUFFIX = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // 24 chars, no I/O
+
+function nNumToIcao24(reg) {
+  const s = reg.replace(/^N/i, '').toUpperCase();
+  let i = 0, num = 0;
+  while (i < s.length && /\d/.test(s[i])) num = num * 10 + parseInt(s[i++]);
+  if (!num || num > 99999) return null;
+
+  // Offset: 601 slots per numeric base, 0-indexed
+  let offset = (num - 1) * 601;
+
+  if (i < s.length) {
+    const l1 = ICAO_SUFFIX.indexOf(s[i++]);
+    if (l1 < 0) return null;
+    offset += l1 * 25 + 1;          // +1 past "bare number" slot
+    if (i < s.length) {
+      const l2 = ICAO_SUFFIX.indexOf(s[i]);
+      if (l2 < 0) return null;
+      offset += l2 + 1;             // +1 past "one-letter" slot
+    }
+  }
+
+  return (0xA00001 + offset).toString(16).padStart(6, '0').toLowerCase();
+}
+
+// ── Flight hours helpers ───────────────────────────────────────
+function blockSeconds(dep, arr) {
+  if (!dep || !arr) return 0;
+  return Math.max(0, arr - dep);
+}
+function fmtHours(secs) {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+function fmtDate(unix) {
+  if (!unix) return '—';
+  return new Date(unix * 1000).toLocaleString();
+}
+
+// ── OpenSky Network — flight history by ICAO24 ────────────────
+// Public API (no auth required for recent data, 30-day rolling):
+// https://opensky-network.org/api/flights/aircraft
+async function fetchOpenSkyFlights(icao24, days = 30) {
+  if (!icao24) return { source: 'OPENSKY', ok: false, error: 'No ICAO24', flights: [] };
+  const end   = Math.floor(Date.now() / 1000);
+  const begin = end - days * 86400;
+  const url = `https://opensky-network.org/api/flights/aircraft?icao24=${icao24}&begin=${begin}&end=${end}`;
+  try {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return { source: 'OPENSKY', ok: true, icao24, flights: Array.isArray(d) ? d : [] };
+  } catch(e) {
+    return { source: 'OPENSKY', ok: false, error: e.message, icao24, flights: [] };
+  }
+}
+
+// ── ADS-B Exchange — flight lookup by registration ────────────
+// Public globe API: https://globe.adsbexchange.com/
+async function fetchADSBExchange(nNum) {
+  const url = `https://globe.adsbexchange.com/re-api/?find=${encodeURIComponent(nNum)}`;
+  try {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    // Returns: { ac: [...], total: N }
+    const ac = d.ac || [];
+    return { source: 'ADSBX', ok: true, aircraft: ac };
+  } catch(e) {
+    return { source: 'ADSBX', ok: false, error: e.message, aircraft: [] };
+  }
+}
+
+// ── Normalize an OpenSky flight record ────────────────────────
+function normalizeOpenSkyFlight(f, nNum) {
+  const dep   = f.firstSeen  || f.departureTime  || null;
+  const arr   = f.lastSeen   || f.arrivalTime    || null;
+  const secs  = blockSeconds(dep, arr);
+  return {
+    icao24:       f.icao24         || '',
+    callsign:     (f.callsign      || nNum).trim(),
+    estDepApt:    f.estDepartureAirport  || f.dep || '—',
+    estArrApt:    f.estArrivalAirport    || f.arr || '—',
+    depTime:      dep,
+    arrTime:      arr,
+    depTimeStr:   fmtDate(dep),
+    arrTimeStr:   fmtDate(arr),
+    blockSecs:    secs,
+    blockHours:   +(secs / 3600).toFixed(2),
+    blockFmt:     fmtHours(secs),
+    status:       arr ? 'CLOSED' : 'OPEN',
+    source:       'OpenSky Network — opensky-network.org/api/',
+  };
 }
 
 // ── FAA Service Difficulty Reports (SDR) API ──────────────────
@@ -642,13 +770,22 @@ async function lookupAircraft() {
   const adResult = await fetchFAADs(faaRec6.mfr, faaRec6.model);
   setStep(5,'done');
 
-  // ── Phase 7: Mint coin + build chain ──────────────────────
+  // ── Phase 7: Flight plan history (OpenSky + ADS-B Exchange) ──
   setStep(6,'active');
-  await buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult);
+  const icao24 = nNumToIcao24(nNum);
+  const [flightResult, adsbResult] = await Promise.all([
+    fetchOpenSkyFlights(icao24, 30),
+    fetchADSBExchange(nNum),
+  ]);
   setStep(6,'done');
+
+  // ── Phase 8: Mint coin + build chain ──────────────────────
+  setStep(7,'active');
+  await buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult, flightResult, adsbResult, icao24);
+  setStep(7,'done');
 }
 
-async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}) {
+async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}, flightResult={}, adsbResult={}, icao24='') {
   const faaRec = faaResult.ok ? normalizeFAARecord(faaResult.raw) : {};
   const accidents = ntsbResult.accidents || [];
   const airmen    = pilotResult.airmen   || [];
@@ -784,11 +921,59 @@ async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdr
     chain.push(adb);
   }
 
+  // ── FLIGHT LOG BLOCKS (closed flight plans — public ADS-B data) ──
+  const rawFlights  = (flightResult.flights || []).map(f => normalizeOpenSkyFlight(f, nNum));
+  const closedFlights = rawFlights.filter(f => f.status === 'CLOSED');
+  for (const fl of closedFlights) {
+    const fb = await makeBlock('flightlog', {
+      icao24:     fl.icao24,
+      callsign:   fl.callsign,
+      depAirport: fl.estDepApt,
+      arrAirport: fl.estArrApt,
+      depTime:    fl.depTimeStr,
+      arrTime:    fl.arrTimeStr,
+      blockSecs:  fl.blockSecs,
+      blockHours: fl.blockHours,
+      blockFmt:   fl.blockFmt,
+      status:     fl.status,
+      source:     fl.source,
+      apiUrl:     'opensky-network.org/api/flights/aircraft',
+    }, chain[chain.length-1].hash, chain.length);
+    chain.push(fb);
+  }
+
+  // ── HOURS LOG SUMMARY BLOCK ──────────────────────────────
+  const totalFlightSecs  = closedFlights.reduce((acc, f) => acc + f.blockSecs, 0);
+  const totalFlightHours = +(totalFlightSecs / 3600).toFixed(2);
+  const totalFlights     = closedFlights.length;
+  if (closedFlights.length > 0) {
+    const depTimes = closedFlights.map(f => f.depTime).filter(Boolean).sort();
+    const hoursBlock = await makeBlock('hourslog', {
+      nNumber:         nNum,
+      icao24:          icao24,
+      totalFlights:    totalFlights,
+      totalFlightSecs: totalFlightSecs,
+      totalFlightHours:totalFlightHours,
+      totalFlightFmt:  fmtHours(totalFlightSecs),
+      earliestFlight:  depTimes[0] ? new Date(depTimes[0] * 1000).toLocaleDateString() : '—',
+      latestFlight:    depTimes[depTimes.length-1] ? new Date(depTimes[depTimes.length-1] * 1000).toLocaleDateString() : '—',
+      dataWindow:      '30-day rolling window',
+      source:          'OpenSky Network — opensky-network.org/api/ (public ADS-B data)',
+      apiUrl:          'opensky-network.org/api/flights/aircraft',
+    }, chain[chain.length-1].hash, chain.length);
+    chain.push(hoursBlock);
+  }
+
   // ── Compute Merkle root of chain ─────────────────────────
   const merkleRoot = await computeMerkleRoot(chain.map(b => b.hash));
 
   // ── Store coin ───────────────────────────────────────────
-  const coin = { nNum, faaRec, chain, merkleRoot, mintedAt: new Date().toISOString(), accidents, airmen, sdrs, forms337, ads };
+  const coin = {
+    nNum, faaRec, chain, merkleRoot, mintedAt: new Date().toISOString(),
+    accidents, airmen, sdrs, forms337, ads,
+    flights: closedFlights, totalFlightHours, totalFlights, icao24,
+    flightResult, adsbResult,
+  };
   mintedCoins[nNum] = coin;
 
   // ── Update global ledger ─────────────────────────────────
@@ -799,6 +984,7 @@ async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdr
   sessionStats.blocks += chain.length;
   sessionStats.accidents += accidents.length;
   sessionStats.pilots += airmen.length;
+  sessionStats.flightHours += totalFlightHours;
   updateStats();
 
   // ── Render ───────────────────────────────────────────────
@@ -829,7 +1015,8 @@ function renderLoading(nNum) {
       <div class="loading-step" id="step3">⬜ Fetching FAA Service Difficulty Reports (SDRs)…</div>
       <div class="loading-step" id="step4">⬜ Fetching FAA Form 337 Major Repair &amp; Alteration records…</div>
       <div class="loading-step" id="step5">⬜ Fetching FAA Airworthiness Directives…</div>
-      <div class="loading-step" id="step6">⬜ Computing SHA-256 block hashes + Merkle root…</div>
+      <div class="loading-step" id="step6">⬜ Converting N-number → ICAO24 · Fetching OpenSky flight history…</div>
+      <div class="loading-step" id="step7">⬜ Computing SHA-256 block hashes + Merkle root · Accumulating operating hours…</div>
     </div>
   </div>`;
 }
@@ -844,7 +1031,8 @@ function setStep(i, state) {
     'Fetching FAA Service Difficulty Reports (SDRs)…',
     'Fetching FAA Form 337 Major Repair & Alteration records…',
     'Fetching FAA Airworthiness Directives…',
-    'Computing SHA-256 block hashes + Merkle root…',
+    'Converting N-number → ICAO24 · Fetching OpenSky flight history…',
+    'Computing SHA-256 block hashes + Merkle root · Accumulating operating hours…',
   ];
   const icons = { done:'✅', active:'⏳', default:'⬜' };
   el.textContent = (icons[state]||'⬜') + ' ' + labels[i];
@@ -856,16 +1044,23 @@ function updateStats() {
   document.getElementById('statBlocks').textContent    = sessionStats.blocks;
   document.getElementById('statAccidents').textContent = sessionStats.accidents;
   document.getElementById('statPilots').textContent    = sessionStats.pilots;
+  const extraCards = [];
   if (sessionStats.maintenance > 0) {
     document.getElementById('statMaintCard').style.display = '';
     document.getElementById('statMaint').textContent = sessionStats.maintenance;
-    // Expand stats bar to 5 columns when maintenance exists
-    document.querySelector('.stats-bar').style.gridTemplateColumns = 'repeat(5,1fr)';
+    extraCards.push('maint');
   }
+  if (sessionStats.flightHours > 0) {
+    document.getElementById('statFlightCard').style.display = '';
+    document.getElementById('statFlightHours').textContent = sessionStats.flightHours.toFixed(1) + 'h';
+    extraCards.push('flight');
+  }
+  const cols = 4 + extraCards.length;
+  document.querySelector('.stats-bar').style.gridTemplateColumns = `repeat(${cols},1fr)`;
 }
 
 function renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}) {
-  const { nNum, faaRec, chain, merkleRoot, accidents, airmen, sdrs=[], forms337=[], ads=[] } = coin;
+  const { nNum, faaRec, chain, merkleRoot, accidents, airmen, sdrs=[], forms337=[], ads=[], flights=[], totalFlightHours=0, totalFlights=0 } = coin;
   const totalPublicMaint = sdrs.length + forms337.length + ads.length;
   const isActive = (faaRec.status === 'V' || faaRec.status === 'A' || !faaRec.status);
 
@@ -920,6 +1115,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult={}, f337
           ${hasAccidents ? `<span class="tag tag-red">⚠ ${accidents.length} NTSB RECORD${accidents.length>1?'S':''}</span>` : ''}
           ${totalPublicMaint > 0 ? `<span class="tag tag-orange">🔧 ${totalPublicMaint} MAINT RECORD${totalPublicMaint>1?'S':''}</span>` : ''}
           ${hasPilots ? `<span class="tag tag-green">👤 ${airmen.length} PILOT RECORD${airmen.length>1?'S':''}</span>` : ''}
+          ${totalFlights > 0 ? `<span class="tag tag-blue">✈ ${totalFlights} FLIGHTS · ${totalFlightHours.toFixed(1)}h</span>` : ''}
           <span class="tag tag-blue">${chain.length} BLOCKS ON CHAIN</span>
         </div>
         <div class="coin-meta">
@@ -945,6 +1141,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult={}, f337
       <div class="tab" onclick="switchTab('accidents','${nNum}',this)">⚠ Accidents (${accidents.length})</div>
       <div class="tab" onclick="switchTab('pilots','${nNum}',this)">👤 Pilots / Airmen (${airmen.length})</div>
       <div class="tab" onclick="switchTab('maintenance','${nNum}',this)">🔧 Maintenance / ADs / SDRs (${totalPublicMaint}+)</div>
+      <div class="tab" onclick="switchTab('flights','${nNum}',this)">✈ Flight Plans &amp; Hours (${totalFlights})</div>
       <div class="tab" onclick="switchTab('raw','${nNum}',this)">{ } Raw API Data</div>
     </div>
 
@@ -960,14 +1157,17 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult={}, f337
     <div id="tab-maintenance-${nNum.replace(/\W/g,'')}" class="tab-pane">
       ${renderMaintenancePanel(nNum)}
     </div>
+    <div id="tab-flights-${nNum.replace(/\W/g,'')}" class="tab-pane">
+      ${renderFlightPanel(nNum)}
+    </div>
     <div id="tab-raw-${nNum.replace(/\W/g,'')}" class="tab-pane">
-      ${renderRawData(faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult)}
+      ${renderRawData(faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult, coin.flightResult, coin.adsbResult)}
     </div>
   </div>`;
 }
 
 function renderChain(chain) {
-  const typeIcon = { genesis:'⛏', ownership:'📋', accident:'⚠', pilot:'👤', update:'🔄', maintenance:'🔧' };
+  const typeIcon = { genesis:'⛏', ownership:'📋', accident:'⚠', pilot:'👤', update:'🔄', maintenance:'🔧', flightlog:'✈', hourslog:'⏱' };
   return `
   <div class="chain-title">Immutable Block Chain</div>
   <div class="chain">
@@ -1084,6 +1284,29 @@ function renderBlockBody(b) {
       ${ratings?`<div class="detail-row" style="grid-column:span 2"><span class="dk">Ratings:</span><span class="dv">${ratings}</span></div>`:''}
     </div>`;
   }
+  if (b.type === 'flightlog') {
+    return `<div class="detail-grid">
+      <div class="detail-row"><span class="dk">Callsign:</span><span class="dv">${d.callsign||'—'}</span></div>
+      <div class="detail-row"><span class="dk">ICAO24:</span><span class="dv mono">${d.icao24||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Departure:</span><span class="dv">${d.depAirport||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Arrival:</span><span class="dv">${d.arrAirport||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Block Off:</span><span class="dv">${d.depTime||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Block On:</span><span class="dv">${d.arrTime||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Block Time:</span><span class="dv" style="color:var(--accent2);font-weight:700">${d.blockFmt||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Status:</span><span class="dv">${d.status||'—'}</span></div>
+    </div>`;
+  }
+  if (b.type === 'hourslog') {
+    return `<div class="detail-grid">
+      <div class="detail-row"><span class="dk">N-Number:</span><span class="dv">${d.nNumber||'—'}</span></div>
+      <div class="detail-row"><span class="dk">ICAO24:</span><span class="dv mono">${d.icao24||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Total Flights:</span><span class="dv" style="color:var(--gold);font-weight:700">${d.totalFlights||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Total Hours:</span><span class="dv" style="color:var(--accent2);font-weight:700">${d.totalFlightFmt||'—'} (${d.totalFlightHours}h)</span></div>
+      <div class="detail-row"><span class="dk">Earliest:</span><span class="dv">${d.earliestFlight||'—'}</span></div>
+      <div class="detail-row"><span class="dk">Latest:</span><span class="dv">${d.latestFlight||'—'}</span></div>
+      <div class="detail-row" style="grid-column:span 2"><span class="dk">Data Window:</span><span class="dv">${d.dataWindow||'—'} · Source: ${d.source||'—'}</span></div>
+    </div>`;
+  }
   return JSON.stringify(d, null, 2);
 }
 
@@ -1156,7 +1379,72 @@ function renderPilotsPanel(airmen, pilotResult) {
   </div>`;
 }
 
-function renderRawData(faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}) {
+function renderFlightPanel(nNum) {
+  const coin = mintedCoins[nNum];
+  if (!coin) return '<div class="empty"><div class="empty-icon">✈</div><h3>No flight data</h3></div>';
+
+  const { flights=[], totalFlightHours=0, totalFlights=0, icao24='', flightResult={}, adsbResult={} } = coin;
+  const totalSecs = flights.reduce((a, f) => a + f.blockSecs, 0);
+
+  const sourceBadge = flightResult.ok
+    ? `<span class="tag tag-green">✓ OpenSky API LIVE</span>`
+    : `<span class="tag tag-orange">⚠ OpenSky API unavailable (${flightResult.error||'CORS/network'})</span>`;
+
+  const hoursHero = totalFlights > 0 ? `
+  <div class="hours-hero">
+    <div class="hours-big">${fmtHours(totalSecs)}</div>
+    <div class="hours-label">Total Operating Hours · ${totalFlights} closed flight plan${totalFlights!==1?'s':''} · 30-day window</div>
+    <div style="font-size:.75rem;color:var(--muted);margin-top:.5rem">
+      ICAO24 Mode-S hex: <span style="font-family:monospace;color:var(--hash)">${icao24||'—'}</span>
+      · Source: OpenSky Network — <a class="link" href="https://opensky-network.org" target="_blank">opensky-network.org</a>
+    </div>
+  </div>` : '';
+
+  const noData = !flightResult.ok
+    ? `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:.83rem;color:var(--muted);margin-bottom:1.25rem">
+        <strong style="color:var(--text)">OpenSky Network API unavailable (${flightResult.error||'CORS/network'}).</strong><br>
+        Flight history requires direct API access. ICAO24 for this aircraft: <span style="font-family:monospace;color:var(--hash)">${icao24||'—'}</span><br>
+        Direct lookup: <a class="link" href="https://opensky-network.org/aircraft-profile?icao24=${icao24}" target="_blank">opensky-network.org/aircraft-profile?icao24=${icao24}</a>
+      </div>` : '';
+
+  const tableHtml = flights.length > 0 ? `
+  <div style="overflow-x:auto">
+    <table class="flight-table">
+      <thead><tr>
+        <th>#</th><th>Callsign</th><th>Dep Airport</th><th>Arr Airport</th>
+        <th>Block Off</th><th>Block On</th><th>Block Time</th><th>Status</th>
+      </tr></thead>
+      <tbody>
+        ${flights.map((f,i) => `<tr>
+          <td style="color:var(--muted);font-size:.72rem">${i+1}</td>
+          <td class="mono">${f.callsign||'—'}</td>
+          <td>${f.estDepApt||'—'}</td>
+          <td>${f.estArrApt||'—'}</td>
+          <td style="font-size:.75rem;color:var(--muted)">${f.depTimeStr||'—'}</td>
+          <td style="font-size:.75rem;color:var(--muted)">${f.arrTimeStr||'—'}</td>
+          <td style="color:var(--accent2);font-weight:600">${f.blockFmt||'—'}</td>
+          <td><span class="tag tag-green" style="font-size:.65rem">${f.status}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  <div style="font-size:.72rem;color:var(--muted);margin-top:.75rem">
+    Source: <a class="link" href="https://opensky-network.org" target="_blank">OpenSky Network — opensky-network.org/api/flights/aircraft</a>
+    · Public ADS-B flight history · 30-day rolling window · No authentication required
+  </div>` : (flightResult.ok ? `<div class="empty"><div class="empty-icon">✈</div><h3>No closed flight plans found</h3><p>No closed flights for ${nNum} in the past 30 days in OpenSky Network.</p></div>` : '');
+
+  return `
+  <div style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    ${sourceBadge}
+    ${adsbResult.ok ? `<span class="tag tag-blue">ADS-B Exchange: ${(adsbResult.aircraft||[]).length} live track(s)</span>` : ''}
+    <span style="font-size:.78rem;color:var(--muted)">ICAO24: <span style="font-family:monospace;color:var(--hash)">${icao24||'—'}</span></span>
+  </div>
+  ${noData}
+  ${hoursHero}
+  ${tableHtml}`;
+}
+
+function renderRawData(faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}, flightResult={}, adsbResult={}) {
   const fmt = (label, result, dataKey) => `
     <div style="margin-bottom:1rem">
       <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.4rem">
@@ -1169,13 +1457,15 @@ function renderRawData(faaResult, ntsbResult, pilotResult, sdrResult={}, f337Res
        + fmt('FAA Airmen Inquiry API — amsrvs.registry.faa.gov/airmeninquiry/', pilotResult, 'airmen')
        + fmt('FAA SDR API — av-info.faa.gov/sdrx/', sdrResult, 'sdrs')
        + fmt('FAA Form 337 API — av-info.faa.gov/', f337Result, 'forms')
-       + fmt('FAA AD Library — rgl.faa.gov/', adResult, 'ads');
+       + fmt('FAA AD Library — rgl.faa.gov/', adResult, 'ads')
+       + fmt('OpenSky Network Flight History — opensky-network.org/api/flights/aircraft', flightResult||{}, 'flights')
+       + fmt('ADS-B Exchange Live — globe.adsbexchange.com/re-api/', adsbResult||{}, 'aircraft');
 }
 
 // ── Tab switching ──────────────────────────────────────────────
 function switchTab(tabName, nNum, el) {
   const key = nNum.replace(/\W/g,'');
-  const panes = ['chain','accidents','pilots','raw'].map(t => document.getElementById(`tab-${t}-${key}`)).filter(Boolean);
+  const panes = ['chain','accidents','pilots','maintenance','flights','raw'].map(t => document.getElementById(`tab-${t}-${key}`)).filter(Boolean);
   panes.forEach(p => p.classList.remove('active'));
   const target = document.getElementById(`tab-${tabName}-${key}`);
   if (target) target.classList.add('active');
@@ -1245,6 +1535,8 @@ function ledgerSummary(b) {
   if (b.type === 'maintenance') return d.recordType
     ? `${d.recordType.split('—')[0].trim()}: ${d.sdrNumber||d.form337Number||d.adNumber||'—'} · ${d.date||d.effectiveDate||'—'}`
     : `Logbook: ${d.maintType||'—'} · ${d.date||'—'} · ${d.techName||'—'}`;
+  if (b.type === 'flightlog')  return `Flight: ${d.callsign||'—'} · ${d.depAirport||'—'} → ${d.arrAirport||'—'} · ${d.blockFmt||'—'}`;
+  if (b.type === 'hourslog')   return `Hours summary: ${d.totalFlights} flights · ${d.totalFlightFmt} total · ${d.dataWindow}`;
   return JSON.stringify(d).substring(0, 60);
 }
 
@@ -1518,6 +1810,7 @@ function renderMaintenancePanel(nNum) {
   <div class="chain-title">Logbook Entry Blocks (${logbookBlocks.length})</div>
   <div class="chain">${logbookBlocks.map((b,i) => renderMaintBlock(b,i,logbookBlocks.length)).join('')}</div>
   ` : ''}`;
+}
 
 // ── Kick off ───────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
