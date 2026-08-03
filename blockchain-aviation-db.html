@@ -278,6 +278,21 @@
   .sig-verified.fail { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
   .key-mgr { display: flex; gap: .5rem; flex-wrap: wrap; }
   @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .form-group.full { grid-column: span 1; } }
+
+  /* ── On-chain anchor ── */
+  .wallet-btn { display:flex;align-items:center;gap:.5rem;padding:.4rem .9rem;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;border:1px solid;transition:all .2s; }
+  .wallet-btn.disconnected { background:rgba(245,158,11,.1);border-color:var(--gold);color:var(--gold); }
+  .wallet-btn.connected    { background:rgba(16,185,129,.1);border-color:var(--green);color:var(--green); }
+  .wallet-btn.connecting   { background:rgba(59,130,246,.1);border-color:var(--accent);color:var(--accent); }
+  .anchor-status { display:flex;align-items:center;gap:.75rem;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:.75rem 1.25rem;margin-bottom:1rem;font-size:.83rem; }
+  .anchor-status.ok   { background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.3); }
+  .anchor-status.fail { background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.3); }
+  .anchor-status.pending { background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.3); }
+  .anchor-icon { font-size:1.3rem; }
+  .anchor-body { flex:1; }
+  .anchor-title { font-weight:700;font-size:.85rem; }
+  .anchor-sub   { font-size:.75rem;color:var(--muted);margin-top:.1rem; }
+  .anchor-link  { font-family:monospace;font-size:.72rem;color:var(--accent);word-break:break-all; }
 </style>
 </head>
 <body>
@@ -304,6 +319,9 @@
       <div class="dot"></div>
       <span id="chainStatusText">Chain Active</span>
     </div>
+    <button id="walletBtn" class="wallet-btn disconnected" onclick="connectWallet()" title="Connect MetaMask to anchor coins on Polygon Amoy">
+      ⛓ Connect Wallet
+    </button>
   </div>
 </header>
 
@@ -415,11 +433,205 @@
   </div>
 </main>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js" crossorigin="anonymous"></script>
 <script>
 // ════════════════════════════════════════════════════════════════
 //  AviChain — Blockchain Aviation Ownership Registry
 //  Data sources: FAA Registry API, NTSB CAROL API, FAA Airmen API
 // ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  ON-CHAIN ANCHOR — Polygon Amoy via GetBlock RPC + MetaMask
+//  Contract: AviChainAnchor.sol — ownerless, no admin key
+//  Deploy: npx hardhat run scripts/deploy.js --network polygonAmoy
+// ════════════════════════════════════════════════════════════════
+
+// ── Contract config ────────────────────────────────────────────
+// Set CONTRACT_ADDRESS to your deployed AviChainAnchor address on Polygon Amoy.
+// Leave empty to run in browser-only mode (no on-chain writes).
+const CONTRACT_ADDRESS = '';   // e.g. '0xAbCd...'  — set after deployment
+
+const POLYGON_AMOY_CHAIN_ID = 80002n;
+
+const CONTRACT_ABI = [
+  { "inputs":[{"internalType":"string","name":"nNumber","type":"string"},{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"uint32","name":"chainLength","type":"uint32"}],"name":"anchor","outputs":[],"stateMutability":"nonpayable","type":"function" },
+  { "inputs":[{"internalType":"string","name":"nNumber","type":"string"}],"name":"getLatestAnchor","outputs":[{"components":[{"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"internalType":"uint256","name":"blockNumber","type":"uint256"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"uint32","name":"chainLength","type":"uint32"}],"internalType":"struct AviChainAnchor.AnchorRecord","name":"","type":"tuple"}],"stateMutability":"view","type":"function" },
+  { "inputs":[{"internalType":"string","name":"nNumber","type":"string"}],"name":"anchorCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function" },
+  { "inputs":[],"name":"totalAnchored","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function" },
+  { "anonymous":false,"inputs":[{"indexed":true,"internalType":"bytes32","name":"nKey","type":"bytes32"},{"indexed":false,"internalType":"string","name":"nNumber","type":"string"},{"indexed":false,"internalType":"bytes32","name":"merkleRoot","type":"bytes32"},{"indexed":false,"internalType":"uint32","name":"chainLength","type":"uint32"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"}],"name":"Anchored","type":"event" }
+];
+
+const AMOY_EXPLORER = 'https://www.oklink.com/amoy/tx/';
+
+// ── Wallet state ───────────────────────────────────────────────
+let walletProvider = null;
+let walletSigner   = null;
+let walletAddress  = null;
+let anchorContract = null;
+
+async function connectWallet() {
+  const btn = document.getElementById('walletBtn');
+  if (!window.ethereum) {
+    alert('MetaMask not detected. Install MetaMask to enable on-chain anchoring.');
+    return;
+  }
+  try {
+    btn.className = 'wallet-btn connecting';
+    btn.textContent = '⏳ Connecting…';
+
+    walletProvider = new ethers.BrowserProvider(window.ethereum);
+    await walletProvider.send('eth_requestAccounts', []);
+    walletSigner  = await walletProvider.getSigner();
+    walletAddress = await walletSigner.getAddress();
+
+    // Verify correct network
+    const net = await walletProvider.getNetwork();
+    if (net.chainId !== POLYGON_AMOY_CHAIN_ID) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + POLYGON_AMOY_CHAIN_ID.toString(16) }],
+        });
+      } catch (switchErr) {
+        if (switchErr.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId:  '0x' + POLYGON_AMOY_CHAIN_ID.toString(16),
+              chainName: 'Polygon Amoy Testnet',
+              nativeCurrency: { name:'MATIC', symbol:'MATIC', decimals:18 },
+              rpcUrls: ['https://rpc-amoy.polygon.technology/'],
+              blockExplorerUrls: ['https://www.oklink.com/amoy'],
+            }],
+          });
+        } else { throw switchErr; }
+      }
+      walletProvider = new ethers.BrowserProvider(window.ethereum);
+      walletSigner   = await walletProvider.getSigner();
+    }
+
+    if (CONTRACT_ADDRESS) {
+      anchorContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, walletSigner);
+    }
+
+    const short = walletAddress.slice(0,6) + '…' + walletAddress.slice(-4);
+    btn.className   = 'wallet-btn connected';
+    btn.textContent = '✅ ' + short + ' · Amoy';
+
+    // Re-render any minted coins to show anchor button
+    Object.keys(mintedCoins).forEach(n => {
+      const el = document.getElementById('onchain-anchor-' + n.replace(/\W/g,''));
+      if (el) el.innerHTML = renderAnchorSection(n);
+    });
+
+  } catch (e) {
+    btn.className   = 'wallet-btn disconnected';
+    btn.textContent = '⛓ Connect Wallet';
+    console.error('Wallet connect failed:', e);
+  }
+}
+
+// Convert hex Merkle root string to bytes32
+function merkleRootToBytes32(hexStr) {
+  const h = hexStr.startsWith('0x') ? hexStr.slice(2) : hexStr;
+  return '0x' + h.padStart(64, '0');
+}
+
+async function anchorOnChain(nNum) {
+  const coin = mintedCoins[nNum];
+  if (!coin) return;
+  const key = nNum.replace(/\W/g,'');
+  const statusEl = document.getElementById('anchor-status-' + key);
+  const btnEl    = document.getElementById('anchor-btn-' + key);
+
+  if (!walletSigner) {
+    await connectWallet();
+    if (!walletSigner) return;
+  }
+  if (!anchorContract) {
+    if (!CONTRACT_ADDRESS) {
+      if (statusEl) statusEl.innerHTML = anchorStatusHtml('fail', '⚠ No contract deployed yet', 'Deploy AviChainAnchor to Polygon Amoy first, then set CONTRACT_ADDRESS in the page source.');
+      return;
+    }
+    anchorContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, walletSigner);
+  }
+
+  try {
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ Sending…'; }
+    if (statusEl) statusEl.innerHTML = anchorStatusHtml('pending', '⏳ Broadcasting transaction…', 'Waiting for MetaMask confirmation…');
+
+    const root32   = merkleRootToBytes32(coin.merkleRoot);
+    const chainLen = coin.chain.length;
+
+    const tx = await anchorContract.anchor(nNum, root32, chainLen);
+    if (statusEl) statusEl.innerHTML = anchorStatusHtml('pending', '⏳ Transaction sent — awaiting confirmation', `TX: <a class="anchor-link" href="${AMOY_EXPLORER}${tx.hash}" target="_blank">${tx.hash}</a>`);
+
+    const receipt = await tx.wait(1);
+    const explorerUrl = AMOY_EXPLORER + tx.hash;
+
+    // Store anchor info on coin
+    coin.onChainTx      = tx.hash;
+    coin.onChainBlock   = receipt.blockNumber;
+    coin.onChainAnchored = true;
+
+    if (statusEl) statusEl.innerHTML = anchorStatusHtml('ok',
+      '✅ Anchored on Polygon Amoy — Block #' + receipt.blockNumber,
+      `Merkle root permanently recorded on-chain. <a class="anchor-link" href="${explorerUrl}" target="_blank">View on OKLink explorer ↗</a>`
+    );
+    if (btnEl) { btnEl.textContent = '✅ Anchored'; }
+
+  } catch (e) {
+    console.error('Anchor failed:', e);
+    if (statusEl) statusEl.innerHTML = anchorStatusHtml('fail', '⚠ Transaction failed', e.reason || e.message || 'Unknown error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '⛓ Anchor on Polygon Amoy'; }
+  }
+}
+
+function anchorStatusHtml(type, title, sub) {
+  const icons = { ok:'🔗', fail:'⚠', pending:'⏳' };
+  return `<div class="anchor-status ${type}">
+    <div class="anchor-icon">${icons[type]||'⛓'}</div>
+    <div class="anchor-body">
+      <div class="anchor-title" style="color:${type==='ok'?'var(--green)':type==='fail'?'var(--red)':'var(--gold)'}">${title}</div>
+      <div class="anchor-sub">${sub}</div>
+    </div>
+  </div>`;
+}
+
+function renderAnchorSection(nNum) {
+  const key  = nNum.replace(/\W/g,'');
+  const coin = mintedCoins[nNum];
+  if (!coin) return '';
+
+  const deployed = !!CONTRACT_ADDRESS;
+  const connected = !!walletSigner;
+
+  if (coin.onChainAnchored) {
+    return anchorStatusHtml('ok',
+      '✅ Anchored on Polygon Amoy · Block #' + coin.onChainBlock,
+      `<a class="anchor-link" href="${AMOY_EXPLORER}${coin.onChainTx}" target="_blank">${coin.onChainTx} ↗</a>`
+    ) + `<div id="anchor-status-${key}"></div>`;
+  }
+
+  const notice = !deployed
+    ? `<div style="font-size:.75rem;color:var(--muted);margin-top:.5rem">Contract not yet deployed. Run <code>npx hardhat run scripts/deploy.js --network polygonAmoy</code> then set <code>CONTRACT_ADDRESS</code>.</div>`
+    : !connected
+    ? `<div style="font-size:.75rem;color:var(--muted);margin-top:.5rem">Connect MetaMask (Polygon Amoy) to anchor this coin on-chain.</div>`
+    : '';
+
+  return `
+  <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+    <div style="font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem">⛓ On-Chain Anchor — Polygon Amoy</div>
+    <div style="font-size:.82rem;margin-bottom:.75rem">
+      Merkle root: <span style="font-family:monospace;font-size:.72rem;color:var(--hash)">${coin.merkleRoot}</span>
+    </div>
+    <div id="anchor-status-${key}"></div>
+    <button id="anchor-btn-${key}" class="btn btn-gold btn-sm" onclick="anchorOnChain('${nNum}')" ${!deployed||!connected?'disabled':''}>
+      ⛓ Anchor on Polygon Amoy
+    </button>
+    ${notice}
+  </div>`;
+}
 
 // ── Global Ledger ──────────────────────────────────────────────
 const globalLedger = [];   // all blocks across all aircraft
@@ -1089,6 +1301,10 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult={}, f337
       <div class="verify-hash">Merkle Root: ${merkleRoot}</div>
     </div>
     <button class="btn btn-ghost btn-sm" onclick="copyToClipboard('${merkleRoot}')">Copy Root</button>
+  </div>
+
+  <div id="onchain-anchor-${nNum.replace(/\W/g,'')}">
+    ${renderAnchorSection(nNum)}
   </div>
 
   <div class="coin-panel">
