@@ -338,7 +338,7 @@
       <div class="stat-card" style="display:none" id="statMaintCard">
         <div class="stat-label">Maintenance Blocks</div>
         <div class="stat-val" style="color:#8b5cf6" id="statMaint">0</div>
-        <div class="stat-sub">Signed on-chain records</div>
+        <div class="stat-sub">SDRs, 337s, ADs, logbook</div></div>
       </div>
     </div>
 
@@ -375,9 +375,16 @@
           <li><strong style="color:var(--text)">FAA Airmen Inquiry API</strong> — <code>amsrvs.registry.faa.gov/airmeninquiry/</code> — Pilot certificates, ratings, medical class</li>
           <li><strong style="color:var(--text)">FAA RelayFlight</strong> — Registry history endpoints for prior owners</li>
         </ul>
-        <p><strong style="color:#8b5cf6">Signed Maintenance Records</strong> — Each aircraft coin supports appending signed maintenance blocks. Generate an ECDSA P-256 keypair (runs entirely in-browser, private key never exported), fill in the maintenance form (work order, ATA chapter, technician, airframe hours, etc.), and click "Sign &amp; Append." The block is ECDSA-signed over SHA-256, the signature and public key are embedded in the block, and the block hash chains to the previous tip. Any block can be re-verified independently by anyone holding the public key. Export blocks as JSON for external audit or FAA/IA review.</p>
-        <p><strong style="color:var(--hash)">Cryptographic Integrity</strong> — All hashes use the Web Crypto API (SubtleCrypto SHA-256) running entirely in your browser. No data is sent to any third-party server. The chain is verifiable client-side.</p>
-        <p><strong style="color:var(--orange)">Public Record Notice</strong> — All data displayed is sourced from U.S. federal public records databases maintained by the FAA and NTSB under public record law. Aircraft registration (14 CFR Part 47), accident reports (49 U.S.C. § 1131), and airmen records are public information.</p>
+        <p><strong style="color:#8b5cf6">Maintenance Records — Public Record</strong> — Maintenance data is fetched from three FAA public sources and recorded as plaintext blocks on the chain, identical to ownership and accident data:
+          <ul style="padding-left:1.5rem;margin-top:.4rem;display:flex;flex-direction:column;gap:.3rem;font-size:.85rem;color:var(--muted)">
+            <li><strong style="color:var(--text)">FAA SDR Database</strong> — <code>av-info.faa.gov/sdrx/</code> — Service Difficulty Reports filed by operators and mechanics</li>
+            <li><strong style="color:var(--text)">FAA Form 337</strong> — <code>av-info.faa.gov/</code> — Major Repair &amp; Alteration records filed per 14 CFR Part 43; publicly archived by FAA</li>
+            <li><strong style="color:var(--text)">FAA AD Library</strong> — <code>rgl.faa.gov/</code> — Airworthiness Directives published in the Federal Register; compliance is mandatory and traceable</li>
+          </ul>
+          Manual logbook entries (14 CFR §91.417) can also be appended as blocks — stored plaintext, no encryption, same as all other public record fields.
+        </p>
+        <p><strong style="color:var(--hash)">Cryptographic Integrity</strong> — SHA-256 block hashing via the browser's SubtleCrypto API links every block to the one before it. No data is encrypted or obscured — hashing is used solely for tamper-detection, not privacy. The full chain and Merkle root are verifiable client-side.</p>
+        <p><strong style="color:var(--orange)">Public Record Notice</strong> — All data is sourced from U.S. federal public record databases. Aircraft registration (14 CFR Part 47), accident reports (49 U.S.C. §1131), airmen records, maintenance entries (14 CFR §91.417 / Part 43), Form 337s, SDRs, and ADs are public information. No data is encrypted.</p>
       </div>
     </div>
   </div>
@@ -441,6 +448,51 @@ async function fetchNTSBAccidents(nNum) {
     return { source: 'NTSB_CAROL', ok: true, accidents: d.Results || d.accidents || d || [] };
   } catch(e) {
     return { source: 'NTSB_CAROL', ok: false, error: e.message, accidents: [] };
+  }
+}
+
+// ── FAA Service Difficulty Reports (SDR) API ──────────────────
+// Public: https://av-info.faa.gov/sdrx/
+async function fetchFAASDRs(nNum) {
+  const url = `https://av-info.faa.gov/sdrx/api/SDR?registration=${encodeURIComponent(nNum)}&maxResults=20`;
+  try {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return { source: 'FAA_SDR', ok: true, sdrs: d.SDRs || d.results || d || [] };
+  } catch(e) {
+    return { source: 'FAA_SDR', ok: false, error: e.message, sdrs: [] };
+  }
+}
+
+// ── FAA Form 337 Major Repair & Alteration records ────────────
+// Public: https://av-info.faa.gov/ (337 lookup)
+async function fetchFAA337s(nNum) {
+  const url = `https://av-info.faa.gov/api/337?nNumber=${encodeURIComponent(nNum)}`;
+  try {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return { source: 'FAA_337', ok: true, forms: d.forms || d.results || d || [] };
+  } catch(e) {
+    return { source: 'FAA_337', ok: false, error: e.message, forms: [] };
+  }
+}
+
+// ── FAA Airworthiness Directives ──────────────────────────────
+// Public: https://rgl.faa.gov/Regulatory_and_Guidance_Library/
+// AD search by aircraft make/model — fetched after FAA registration
+async function fetchFAADs(mfr, model) {
+  if (!mfr) return { source: 'FAA_AD', ok: false, error: 'No make/model', ads: [] };
+  const url = `https://rgl.faa.gov/Regulatory_and_Guidance_Library/rgAD.nsf/0/` +
+    `SearchADs?OpenAgent&Make=${encodeURIComponent(mfr)}&Model=${encodeURIComponent(model||'')}`;
+  try {
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    return { source: 'FAA_AD', ok: true, ads: d.ADs || d.results || d || [] };
+  } catch(e) {
+    return { source: 'FAA_AD', ok: false, error: e.message, ads: [] };
   }
 }
 
@@ -574,16 +626,35 @@ async function lookupAircraft() {
   }
   setStep(2,'done');
 
-  // ── Phase 4: Mint coin + build chain ──────────────────────
+  // ── Phase 4: FAA Service Difficulty Reports ────────────────
   setStep(3,'active');
-  await buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult);
+  const sdrResult = await fetchFAASDRs(nNum);
   setStep(3,'done');
+
+  // ── Phase 5: FAA Form 337 records ─────────────────────────
+  setStep(4,'active');
+  const f337Result = await fetchFAA337s(nNum);
+  setStep(4,'done');
+
+  // ── Phase 6: Airworthiness Directives ─────────────────────
+  setStep(5,'active');
+  const faaRec6 = faaResult.ok ? normalizeFAARecord(faaResult.raw) : {};
+  const adResult = await fetchFAADs(faaRec6.mfr, faaRec6.model);
+  setStep(5,'done');
+
+  // ── Phase 7: Mint coin + build chain ──────────────────────
+  setStep(6,'active');
+  await buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult);
+  setStep(6,'done');
 }
 
-async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult) {
+async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}) {
   const faaRec = faaResult.ok ? normalizeFAARecord(faaResult.raw) : {};
   const accidents = ntsbResult.accidents || [];
   const airmen    = pilotResult.airmen   || [];
+  const sdrs      = sdrResult.sdrs       || [];
+  const forms337  = f337Result.forms     || [];
+  const ads       = adResult.ads         || [];
 
   const chain = [];
 
@@ -660,11 +731,64 @@ async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult) {
     chain.push(pb);
   }
 
+  // ── SERVICE DIFFICULTY REPORT BLOCKS (public record) ─────
+  for (const s of sdrs.slice(0, 10)) {
+    const sb = await makeBlock('maintenance', {
+      recordType:   'FAA Service Difficulty Report (SDR)',
+      sdrNumber:    s.SDRNumber    || s.sdrNumber    || s.ReportNumber || '',
+      date:         s.SubmitDate   || s.submitDate   || s.Date || '',
+      system:       s.ATA          || s.ataChapter   || s.SystemCode || '',
+      partName:     s.PartName     || s.partName     || '',
+      partNumber:   s.PartNumber   || s.partNumber   || '',
+      difficulty:   s.Difficulty   || s.difficulty   || s.FailureMode || '',
+      description:  s.NarrativeText|| s.narrative    || s.Description || '',
+      submittedBy:  s.SubmittedBy  || s.submittedBy  || '',
+      operator:     s.Operator     || s.operator     || '',
+      source:       'FAA Service Difficulty Reporting System',
+      apiUrl:       'av-info.faa.gov/sdrx/',
+    }, chain[chain.length-1].hash, chain.length);
+    chain.push(sb);
+  }
+
+  // ── FAA FORM 337 BLOCKS (Major Repair & Alteration — public record) ──
+  for (const f of forms337.slice(0, 10)) {
+    const fb = await makeBlock('maintenance', {
+      recordType:   'FAA Form 337 — Major Repair & Alteration (14 CFR Part 43)',
+      form337Number:f.FormNumber   || f.formNumber   || f.DocumentNumber || '',
+      date:         f.Date         || f.ApprovalDate || f.date || '',
+      workPerformed:f.WorkPerformed|| f.description  || f.WorkDescription || '',
+      ataChapter:   f.ATAChapter   || f.ataChapter   || '',
+      approvedBy:   f.ApprovedBy   || f.approvedBy   || f.IA || '',
+      approvalBasis:f.ApprovalBasis|| f.approvalBasis|| '',
+      location:     f.Location     || f.location     || '',
+      source:       'FAA Form 337 Major Repair & Alteration Database',
+      apiUrl:       'av-info.faa.gov/',
+    }, chain[chain.length-1].hash, chain.length);
+    chain.push(fb);
+  }
+
+  // ── AIRWORTHINESS DIRECTIVE BLOCKS (public law — Federal Register) ──
+  for (const ad of ads.slice(0, 10)) {
+    const adb = await makeBlock('maintenance', {
+      recordType:   'FAA Airworthiness Directive (AD)',
+      adNumber:     ad.AdNumber    || ad.adNumber    || ad.DocumentNumber || '',
+      effectiveDate:ad.EffectiveDate|| ad.effectiveDate || '',
+      subject:      ad.Subject     || ad.subject     || ad.Title || '',
+      applicability:ad.Applicability|| ad.applicability|| '',
+      compliance:   ad.Compliance  || ad.compliance  || '',
+      description:  ad.Description || ad.description || ad.Summary || '',
+      amendment:    ad.AmendmentNumber || ad.amendment || '',
+      source:       'FAA Airworthiness Directives — Federal Register / rgl.faa.gov',
+      apiUrl:       'rgl.faa.gov/Regulatory_and_Guidance_Library/',
+    }, chain[chain.length-1].hash, chain.length);
+    chain.push(adb);
+  }
+
   // ── Compute Merkle root of chain ─────────────────────────
   const merkleRoot = await computeMerkleRoot(chain.map(b => b.hash));
 
   // ── Store coin ───────────────────────────────────────────
-  const coin = { nNum, faaRec, chain, merkleRoot, mintedAt: new Date().toISOString(), accidents, airmen };
+  const coin = { nNum, faaRec, chain, merkleRoot, mintedAt: new Date().toISOString(), accidents, airmen, sdrs, forms337, ads };
   mintedCoins[nNum] = coin;
 
   // ── Update global ledger ─────────────────────────────────
@@ -678,7 +802,7 @@ async function buildAndRenderChain(nNum, faaResult, ntsbResult, pilotResult) {
   updateStats();
 
   // ── Render ───────────────────────────────────────────────
-  document.getElementById('resultArea').innerHTML = renderCoin(coin, faaResult, ntsbResult, pilotResult);
+  document.getElementById('resultArea').innerHTML = renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult);
 }
 
 async function computeMerkleRoot(hashes) {
@@ -702,7 +826,10 @@ function renderLoading(nNum) {
       <div class="loading-step" id="step0">⬜ Fetching FAA Aircraft Registration…</div>
       <div class="loading-step" id="step1">⬜ Querying NTSB CAROL Accident Database…</div>
       <div class="loading-step" id="step2">⬜ Looking up FAA Airmen Records…</div>
-      <div class="loading-step" id="step3">⬜ Computing SHA-256 block hashes + Merkle root…</div>
+      <div class="loading-step" id="step3">⬜ Fetching FAA Service Difficulty Reports (SDRs)…</div>
+      <div class="loading-step" id="step4">⬜ Fetching FAA Form 337 Major Repair &amp; Alteration records…</div>
+      <div class="loading-step" id="step5">⬜ Fetching FAA Airworthiness Directives…</div>
+      <div class="loading-step" id="step6">⬜ Computing SHA-256 block hashes + Merkle root…</div>
     </div>
   </div>`;
 }
@@ -714,6 +841,9 @@ function setStep(i, state) {
     'Fetching FAA Aircraft Registration…',
     'Querying NTSB CAROL Accident Database…',
     'Looking up FAA Airmen Records…',
+    'Fetching FAA Service Difficulty Reports (SDRs)…',
+    'Fetching FAA Form 337 Major Repair & Alteration records…',
+    'Fetching FAA Airworthiness Directives…',
     'Computing SHA-256 block hashes + Merkle root…',
   ];
   const icons = { done:'✅', active:'⏳', default:'⬜' };
@@ -734,8 +864,9 @@ function updateStats() {
   }
 }
 
-function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
-  const { nNum, faaRec, chain, merkleRoot, accidents, airmen } = coin;
+function renderCoin(coin, faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}) {
+  const { nNum, faaRec, chain, merkleRoot, accidents, airmen, sdrs=[], forms337=[], ads=[] } = coin;
+  const totalPublicMaint = sdrs.length + forms337.length + ads.length;
   const isActive = (faaRec.status === 'V' || faaRec.status === 'A' || !faaRec.status);
 
   const statusTag = isActive
@@ -787,6 +918,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
           ${faaOkBadge}
           ${ntsbOkBadge}
           ${hasAccidents ? `<span class="tag tag-red">⚠ ${accidents.length} NTSB RECORD${accidents.length>1?'S':''}</span>` : ''}
+          ${totalPublicMaint > 0 ? `<span class="tag tag-orange">🔧 ${totalPublicMaint} MAINT RECORD${totalPublicMaint>1?'S':''}</span>` : ''}
           ${hasPilots ? `<span class="tag tag-green">👤 ${airmen.length} PILOT RECORD${airmen.length>1?'S':''}</span>` : ''}
           <span class="tag tag-blue">${chain.length} BLOCKS ON CHAIN</span>
         </div>
@@ -812,7 +944,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
       <div class="tab active" onclick="switchTab('chain','${nNum}',this)">⛓ Chain of Ownership (${chain.length})</div>
       <div class="tab" onclick="switchTab('accidents','${nNum}',this)">⚠ Accidents (${accidents.length})</div>
       <div class="tab" onclick="switchTab('pilots','${nNum}',this)">👤 Pilots / Airmen (${airmen.length})</div>
-      <div class="tab" onclick="switchTab('maintenance','${nNum}',this)">🔧 Maintenance Records</div>
+      <div class="tab" onclick="switchTab('maintenance','${nNum}',this)">🔧 Maintenance / ADs / SDRs (${totalPublicMaint}+)</div>
       <div class="tab" onclick="switchTab('raw','${nNum}',this)">{ } Raw API Data</div>
     </div>
 
@@ -829,7 +961,7 @@ function renderCoin(coin, faaResult, ntsbResult, pilotResult) {
       ${renderMaintenancePanel(nNum)}
     </div>
     <div id="tab-raw-${nNum.replace(/\W/g,'')}" class="tab-pane">
-      ${renderRawData(faaResult, ntsbResult, pilotResult)}
+      ${renderRawData(faaResult, ntsbResult, pilotResult, sdrResult, f337Result, adResult)}
     </div>
   </div>`;
 }
@@ -897,6 +1029,37 @@ function renderBlockBody(b) {
     </div>`;
   }
   if (b.type === 'maintenance') {
+    const isPublic = !!d.recordType;
+    if (isPublic) {
+      // Public record — show all fields plaintext
+      const rows = [];
+      if (d.recordType)    rows.push(['Record Type', d.recordType]);
+      if (d.sdrNumber)     rows.push(['SDR Number',    d.sdrNumber]);
+      if (d.form337Number) rows.push(['Form 337 #',    d.form337Number]);
+      if (d.adNumber)      rows.push(['AD Number',     d.adNumber]);
+      if (d.date || d.effectiveDate) rows.push(['Date', d.date || d.effectiveDate]);
+      if (d.system || d.ataChapter) rows.push(['ATA / System', d.system || d.ataChapter]);
+      if (d.subject)       rows.push(['Subject',       d.subject]);
+      if (d.applicability) rows.push(['Applicability', d.applicability]);
+      if (d.partName)      rows.push(['Part Name',     d.partName]);
+      if (d.partNumber)    rows.push(['Part Number',   d.partNumber]);
+      if (d.difficulty)    rows.push(['Difficulty',    d.difficulty]);
+      if (d.workPerformed) rows.push(['Work Performed',d.workPerformed]);
+      if (d.approvedBy)    rows.push(['Approved By',   d.approvedBy]);
+      if (d.approvalBasis) rows.push(['Approval Basis',d.approvalBasis]);
+      if (d.submittedBy)   rows.push(['Submitted By',  d.submittedBy]);
+      if (d.operator)      rows.push(['Operator',      d.operator]);
+      if (d.location)      rows.push(['Location',      d.location]);
+      if (d.amendment)     rows.push(['Amendment',     d.amendment]);
+      if (d.compliance)    rows.push(['Compliance',    d.compliance]);
+      const desc = d.description || d.narrative || d.summary || '';
+      return `<div class="detail-grid">
+        ${rows.map(([k,v])=>`<div class="detail-row"><span class="dk">${k}:</span><span class="dv">${v}</span></div>`).join('')}
+        ${desc?`<div class="detail-row" style="grid-column:span 2"><span class="dk">Description:</span><span class="dv">${desc.substring(0,300)}${desc.length>300?'…':''}</span></div>`:''}
+        <div class="detail-row" style="grid-column:span 2"><span class="dk">Source:</span><span class="dv" style="color:var(--muted)">${d.source} — <span style="font-family:monospace;font-size:.75rem">${d.apiUrl||''}</span></span></div>
+      </div>`;
+    }
+    // Manually entered logbook record — plaintext, no encryption
     return `<div class="detail-grid">
       <div class="detail-row"><span class="dk">Work Order:</span><span class="dv">${d.workOrder||'—'}</span></div>
       <div class="detail-row"><span class="dk">Date:</span><span class="dv">${d.date||'—'}</span></div>
@@ -908,14 +1071,6 @@ function renderBlockBody(b) {
       <div class="detail-row"><span class="dk">TSO:</span><span class="dv">${d.tso||'—'}</span></div>
       ${d.description?`<div class="detail-row" style="grid-column:span 2"><span class="dk">Description:</span><span class="dv">${d.description}</span></div>`:''}
       ${d.parts?`<div class="detail-row" style="grid-column:span 2"><span class="dk">Parts / PNs:</span><span class="dv">${d.parts}</span></div>`:''}
-      <div class="detail-row" style="grid-column:span 2">
-        <span class="dk">Signature:</span>
-        <span class="dv" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-          <span class="sig-verified ${d.sigVerified?'ok':'fail'}">${d.sigVerified?'✓ ECDSA VERIFIED':'⚠ UNVERIFIED'}</span>
-          <span style="font-family:monospace;font-size:.65rem;color:var(--hash);word-break:break-all">${(d.signature||'').substring(0,48)}…</span>
-        </span>
-      </div>
-      <div class="detail-row" style="grid-column:span 2"><span class="dk">Signer PubKey:</span><span class="dv" style="font-family:monospace;font-size:.65rem;color:var(--hash);word-break:break-all">${(d.signerPubKey||'').substring(0,64)}…</span></div>
     </div>`;
   }
   if (b.type === 'pilot') {
@@ -1001,17 +1156,20 @@ function renderPilotsPanel(airmen, pilotResult) {
   </div>`;
 }
 
-function renderRawData(faaResult, ntsbResult, pilotResult) {
-  const fmt = (label, result) => `
+function renderRawData(faaResult, ntsbResult, pilotResult, sdrResult={}, f337Result={}, adResult={}) {
+  const fmt = (label, result, dataKey) => `
     <div style="margin-bottom:1rem">
       <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.4rem">
-        ${label} — ${result.ok ? '✓ Live API response' : '⚠ API unavailable'} — Source: ${result.source||''}
+        ${label} — ${result.ok ? '✓ Live API response' : '⚠ API unavailable'} — ${result.source||''}
       </div>
-      <pre style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.875rem;font-size:.72rem;color:var(--hash);overflow-x:auto;max-height:300px;white-space:pre-wrap;word-break:break-all">${JSON.stringify(result.ok ? (result.raw||result.accidents||result.airmen) : {error:result.error}, null, 2)}</pre>
+      <pre style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.875rem;font-size:.72rem;color:var(--hash);overflow-x:auto;max-height:240px;white-space:pre-wrap;word-break:break-all">${JSON.stringify(result.ok ? (result[dataKey]||result.raw||result) : {error:result.error}, null, 2)}</pre>
     </div>`;
-  return fmt('FAA Aircraft Registration API', faaResult)
-       + fmt('NTSB CAROL Accident API', ntsbResult)
-       + fmt('FAA Airmen Inquiry API', pilotResult);
+  return fmt('FAA Aircraft Registration API — registry.faa.gov/api/', faaResult, 'raw')
+       + fmt('NTSB CAROL Accident API — data.ntsb.gov/carol-main-public/api/', ntsbResult, 'accidents')
+       + fmt('FAA Airmen Inquiry API — amsrvs.registry.faa.gov/airmeninquiry/', pilotResult, 'airmen')
+       + fmt('FAA SDR API — av-info.faa.gov/sdrx/', sdrResult, 'sdrs')
+       + fmt('FAA Form 337 API — av-info.faa.gov/', f337Result, 'forms')
+       + fmt('FAA AD Library — rgl.faa.gov/', adResult, 'ads');
 }
 
 // ── Tab switching ──────────────────────────────────────────────
@@ -1084,7 +1242,9 @@ function ledgerSummary(b) {
   if (b.type === 'ownership')  return `Owner: ${d.owner||'—'}${d.from?' ('+d.from+' → '+(d.to||'present')+')':''}`;
   if (b.type === 'accident')   return `NTSB ${d.eventId||'—'} · ${d.date||'—'} · ${d.injuries||'—'}`;
   if (b.type === 'pilot')      return `Pilot: ${d.name||'—'} · ${d.certType||'—'}`;
-  if (b.type === 'maintenance') return `Maint: ${d.maintType||'—'} · ${d.date||'—'} · ${d.techName||'—'} ${d.sigVerified?'[✓ SIGNED]':''}`;
+  if (b.type === 'maintenance') return d.recordType
+    ? `${d.recordType.split('—')[0].trim()}: ${d.sdrNumber||d.form337Number||d.adNumber||'—'} · ${d.date||d.effectiveDate||'—'}`
+    : `Logbook: ${d.maintType||'—'} · ${d.date||'—'} · ${d.techName||'—'}`;
   return JSON.stringify(d).substring(0, 60);
 }
 
@@ -1099,76 +1259,12 @@ function copyToClipboard(text) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  MAINTENANCE RECORD SIGNING — ECDSA P-256 via SubtleCrypto
+//  MAINTENANCE RECORD ENTRY — Public record, stored plaintext
+//  Sources: FAA SDR, FAA Form 337, FAA ADs (fetched automatically)
+//  Manual logbook entries: plaintext per 14 CFR §91.417
 // ════════════════════════════════════════════════════════════════
 
-// Per-aircraft keypairs stored in session (never leaves browser)
-const aircraftKeys = {};   // nNum -> { privateKey, publicKey, pubKeyHex, pubKeyJwk }
-
-// Generate a fresh ECDSA P-256 keypair for signing maintenance records
-async function generateSigningKey(nNum) {
-  const pair = await crypto.subtle.generateKey(
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    true,   // extractable so we can export & display
-    ['sign', 'verify']
-  );
-  // Export public key as hex for display / chain storage
-  const pubSpki  = await crypto.subtle.exportKey('spki', pair.publicKey);
-  const pubHex   = Array.from(new Uint8Array(pubSpki)).map(b=>b.toString(16).padStart(2,'0')).join('');
-  const pubJwk   = await crypto.subtle.exportKey('jwk', pair.publicKey);
-
-  aircraftKeys[nNum] = { privateKey: pair.privateKey, publicKey: pair.publicKey, pubKeyHex, pubJwk };
-  refreshKeyDisplay(nNum);
-}
-
-// Import a public key from hex (for verification of blocks you received externally)
-async function importPubKeyFromHex(hex) {
-  const bytes = new Uint8Array(hex.match(/.{2}/g).map(h=>parseInt(h,16)));
-  return crypto.subtle.importKey('spki', bytes.buffer, { name:'ECDSA', namedCurve:'P-256' }, true, ['verify']);
-}
-
-// Sign a data object with the aircraft's private key, return base64url signature
-async function signData(nNum, dataObj) {
-  const keys = aircraftKeys[nNum];
-  if (!keys) throw new Error('No keypair for ' + nNum);
-  const encoded = new TextEncoder().encode(JSON.stringify(dataObj));
-  const sigBuf  = await crypto.subtle.sign({ name:'ECDSA', hash:'SHA-256' }, keys.privateKey, encoded);
-  return btoa(String.fromCharCode(...new Uint8Array(sigBuf)))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
-}
-
-// Verify an ECDSA signature against a public key (hex) and data object
-async function verifySignature(pubKeyHex, dataObj, signatureB64url) {
-  try {
-    const pubKey   = await importPubKeyFromHex(pubKeyHex);
-    const encoded  = new TextEncoder().encode(JSON.stringify(dataObj));
-    const sigBytes = Uint8Array.from(atob(signatureB64url.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
-    return crypto.subtle.verify({ name:'ECDSA', hash:'SHA-256' }, pubKey, sigBytes, encoded);
-  } catch { return false; }
-}
-
-function refreshKeyDisplay(nNum) {
-  const key = nNum.replace(/\W/g,'');
-  const el  = document.getElementById('keyDisplay-' + key);
-  if (!el) return;
-  const k = aircraftKeys[nNum];
-  if (k) {
-    el.innerHTML = `<span class="key-display">${k.pubKeyHex}</span>`;
-    document.getElementById('keyActions-'+key).innerHTML = `
-      <button class="btn btn-ghost btn-sm" onclick="exportPubKey('${nNum}')">⬇ Export PubKey</button>
-      <button class="btn btn-ghost btn-sm" onclick="generateSigningKey('${nNum}')">↺ Rotate Key</button>`;
-  }
-}
-
-function exportPubKey(nNum) {
-  const k = aircraftKeys[nNum];
-  if (!k) return;
-  const blob = new Blob([JSON.stringify({ nNumber: nNum, algorithm:'ECDSA-P256', pubKeyHex: k.pubKeyHex, pubKeyJwk: k.pubJwk, exported: new Date().toISOString() }, null, 2)], { type:'application/json' });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `avichain-pubkey-${nNum}.json` });
-  a.click();
-}
-
-// ── Add a signed maintenance block to an aircraft's chain ──────
+// ── Add a manual logbook maintenance block (plaintext public record) ──
 async function addMaintenanceBlock(nNum) {
   const key     = nNum.replace(/\W/g,'');
   const coin    = mintedCoins[nNum];
@@ -1190,39 +1286,17 @@ async function addMaintenanceBlock(nNum) {
     parts:        get('maint-parts'),
     nNumber:      nNum,
     recordedAt:   new Date().toISOString(),
+    source:       'Manual Logbook Entry — 14 CFR §91.417 (Public Record)',
   };
 
-  // Validate required fields
   if (!maintData.date || !maintData.maintType || !maintData.description) {
     showMaintError(key, 'Date, maintenance type, and description are required.');
     return;
   }
 
-  // Sign if keypair exists
-  let signature    = '';
-  let signerPubKey = '';
-  let sigVerified  = false;
-  const kp = aircraftKeys[nNum];
-  if (kp) {
-    try {
-      signature    = await signData(nNum, maintData);
-      signerPubKey = kp.pubKeyHex;
-      sigVerified  = await verifySignature(signerPubKey, maintData, signature);
-    } catch(e) {
-      showMaintError(key, 'Signing failed: ' + e.message);
-      return;
-    }
-  }
-
-  // Build block
+  // Build block — all data plaintext, no encryption
   const prevHash = coin.chain[coin.chain.length - 1].hash;
-  const block = await makeBlock('maintenance', {
-    ...maintData,
-    signature,
-    signerPubKey,
-    sigVerified,
-    source: 'AviChain Signed Maintenance Record',
-  }, prevHash, coin.chain.length);
+  const block = await makeBlock('maintenance', maintData, prevHash, coin.chain.length);
 
   coin.chain.push(block);
   // Recompute merkle root
@@ -1263,21 +1337,31 @@ function showMaintSuccess(key, block) {
     el.style.display = '';
     el.innerHTML = `<div class="verify-icon">✅</div>
       <div class="verify-text">
-        <div class="verify-title">Maintenance block #${block.index} signed and appended to chain</div>
+        <div class="verify-title">Maintenance block #${block.index} appended to chain (public plaintext record)</div>
         <div class="verify-hash">Block hash: ${block.hash}</div>
-        <div class="verify-hash">Sig: ${block.data.signature ? block.data.signature.substring(0,48)+'…' : 'unsigned'}</div>
       </div>`;
     setTimeout(() => { if (el) el.style.display = 'none'; }, 8000);
   }
+}
+
+// ── Export a single maintenance block as JSON ──────────────────
+function exportMaintenanceBlock(nNum, blockIndex) {
+  const coin  = mintedCoins[nNum];
+  const block = coin?.chain.find(b => b.index === blockIndex);
+  if (!block) return;
+  const payload = { avichain: true, version: '1.0', nNumber: nNum, block, merkleRoot: coin.merkleRoot, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `avichain-maint-${nNum}-block${blockIndex}.json` });
+  a.click();
 }
 
 // ── Render maintenance panel ───────────────────────────────────
 function renderMaintenancePanel(nNum) {
   const key  = nNum.replace(/\W/g,'');
   const coin = mintedCoins[nNum];
-  const maintBlocks = (coin?.chain || []).filter(b => b.type === 'maintenance');
-  const hasKey = !!aircraftKeys[nNum];
-  const keyHex = hasKey ? aircraftKeys[nNum].pubKeyHex : '';
+  const allMaintBlocks   = (coin?.chain || []).filter(b => b.type === 'maintenance');
+  const publicBlocks     = allMaintBlocks.filter(b => b.data.recordType);   // FAA SDR / 337 / AD
+  const logbookBlocks    = allMaintBlocks.filter(b => !b.data.recordType);  // manual entries
 
   const ataChapters = [
     '05 - Time Limits / Maintenance Checks', '06 - Dimensions and Areas', '07 - Lifting and Shoring',
@@ -1295,55 +1379,84 @@ function renderMaintenancePanel(nNum) {
   ];
 
   const maintTypes = [
-    'Annual Inspection (14 CFR 91.409)',
-    '100-Hour Inspection (14 CFR 91.409)',
+    'Annual Inspection (14 CFR §91.409)',
+    '100-Hour Inspection (14 CFR §91.409)',
     'Progressive Inspection',
-    'Altimeter/Transponder Check (14 CFR 91.411/413)',
-    'ELT Battery / Inspection (14 CFR 91.207)',
+    'Altimeter/Transponder Check (14 CFR §91.411/413)',
+    'ELT Battery / Inspection (14 CFR §91.207)',
     'AD Compliance — Airworthiness Directive',
     'SB Compliance — Service Bulletin',
     'Engine Overhaul / TBO',
     'Prop Overhaul',
-    'Avionics Repair / Install',
-    'Structural Repair',
+    'Avionics Repair / Install (Form 337 if major)',
+    'Structural Repair (Form 337 if major)',
     'Unscheduled Repair',
     'Weight and Balance Update',
     'Logbook Entry — Oil Change / Fluid Service',
     'Other Scheduled Maintenance',
   ];
 
-  return `
-  <!-- Key Management -->
-  <div class="signer-box" style="margin-bottom:1rem">
-    <div class="label">🔑 Signing Identity — ECDSA P-256 Keypair (session)</div>
-    <div style="margin-bottom:.5rem;font-size:.78rem;color:var(--muted)">
-      Generate a keypair to cryptographically sign each maintenance block. The private key never leaves your browser.
-      The public key is embedded in every block you sign and can be shared for independent verification.
-    </div>
-    <div class="signer-row">
-      <div style="flex:1" id="keyDisplay-${key}">
-        ${hasKey
-          ? `<span class="key-display">${keyHex}</span>`
-          : `<span class="key-none">No keypair generated — blocks will be recorded unsigned</span>`}
+  const renderMaintBlock = (b, i, total) => `
+    <div class="block">
+      <div class="block-connector">
+        <div class="block-node maintenance">🔧</div>
+        <div class="block-line${i===total-1?' last':''}"></div>
       </div>
-    </div>
-    <div class="key-mgr" style="margin-top:.75rem" id="keyActions-${key}">
-      ${hasKey
-        ? `<button class="btn btn-ghost btn-sm" onclick="exportPubKey('${nNum}')">⬇ Export PubKey</button>
-           <button class="btn btn-ghost btn-sm" onclick="generateSigningKey('${nNum}')">↺ Rotate Key</button>`
-        : `<button class="btn btn-primary btn-sm" onclick="generateSigningKey('${nNum}')">⚡ Generate Signing Keypair</button>`}
-    </div>
+      <div class="block-card maint-record maintenance-block">
+        <div class="block-top">
+          <span class="block-num">#${b.index}</span>
+          <span class="block-type-label maintenance">MAINTENANCE</span>
+          ${b.data.recordType?.includes('SDR')  ? `<span class="block-type-label accident" style="font-size:.65rem">SDR</span>`   : ''}
+          ${b.data.recordType?.includes('337')  ? `<span class="block-type-label update"   style="font-size:.65rem">FORM 337</span>` : ''}
+          ${b.data.recordType?.includes('AD')   ? `<span class="block-type-label accident" style="font-size:.65rem">AD</span>`    : ''}
+          ${!b.data.recordType                  ? `<span class="block-type-label pilot"    style="font-size:.65rem">LOGBOOK</span>` : ''}
+          <span class="tag tag-green" style="font-size:.65rem;padding:.1rem .35rem">PUBLIC RECORD</span>
+          <span class="block-ts">${new Date(b.ts).toLocaleString()}</span>
+        </div>
+        <div class="block-body">${renderBlockBody(b)}</div>
+        <div class="block-hashes">
+          <div class="block-hash-row"><span class="hl">HASH&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="hv">${b.hash}</span></div>
+          <div class="block-hash-row"><span class="hl">PREV&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="hv prev">${b.prevHash}</span></div>
+          <div class="block-hash-row"><span class="hl">SOURCE&nbsp;&nbsp;</span><span class="hv" style="color:var(--muted)">${b.data.source||'—'}</span></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:.5rem" onclick="exportMaintenanceBlock('${nNum}',${b.index})">⬇ Export Block JSON</button>
+      </div>
+    </div>`;
+
+  return `
+  <!-- Public record notice -->
+  <div style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.25);border-radius:10px;padding:.875rem 1.25rem;margin-bottom:1.25rem;font-size:.83rem;line-height:1.6">
+    <strong style="color:var(--green)">All maintenance data is public record.</strong>
+    Maintenance records are public under <strong>14 CFR §91.417</strong> (owner must make records available for inspection),
+    <strong>14 CFR Part 43</strong> (performance standards for maintenance entries),
+    and <strong>49 U.S.C. §44701</strong> (FAA airworthiness oversight).
+    FAA Form 337 (Major Repair &amp; Alteration) is filed with and published by the FAA.
+    Service Difficulty Reports and Airworthiness Directives are published in the Federal Register.
+    All blocks below are stored as plaintext — no encryption applied.
   </div>
 
-  <!-- Add Record Form -->
+  <!-- Public FAA records pulled automatically -->
+  ${publicBlocks.length > 0 ? `
+  <div class="chain-title">FAA Public Maintenance Records (${publicBlocks.length} auto-fetched)</div>
+  <div class="chain">${publicBlocks.map((b,i) => renderMaintBlock(b,i,publicBlocks.length)).join('')}</div>
+  ` : `
+  <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1.25rem;font-size:.83rem;color:var(--muted)">
+    <strong style="color:var(--text)">FAA public maintenance APIs returned no records for ${nNum}.</strong><br>
+    Direct lookups: &nbsp;
+    <a class="link" href="https://av-info.faa.gov/sdrx/" target="_blank">FAA SDR Database</a> ·
+    <a class="link" href="https://av-info.faa.gov/" target="_blank">FAA Form 337 Search</a> ·
+    <a class="link" href="https://rgl.faa.gov/Regulatory_and_Guidance_Library/rgAD.nsf" target="_blank">FAA AD Library</a>
+  </div>`}
+
+  <!-- Manual logbook entry form -->
   <div class="maint-form">
-    <h4>🔧 Add Signed Maintenance Record</h4>
+    <h4>🔧 Add Logbook Entry Block <span style="font-weight:400;font-size:.78rem;color:var(--muted)">(14 CFR §91.417 — public record, stored plaintext)</span></h4>
     <div id="maintMsg-${key}" style="display:none"></div>
 
     <div class="form-grid">
       <div class="form-group">
         <label>Work Order / Logbook Ref</label>
-        <input id="maint-wo-${key}" type="text" placeholder="WO-2024-0042 or logbook page">
+        <input id="maint-wo-${key}" type="text" placeholder="WO-2024-0042 or logbook page #">
       </div>
       <div class="form-group">
         <label>Date of Work *</label>
@@ -1364,7 +1477,7 @@ function renderMaintenancePanel(nNum) {
         </select>
       </div>
       <div class="form-group">
-        <label>Technician Name</label>
+        <label>Technician / A&amp;P Name</label>
         <input id="maint-tech-${key}" type="text" placeholder="First Last">
       </div>
       <div class="form-group">
@@ -1372,101 +1485,39 @@ function renderMaintenancePanel(nNum) {
         <input id="maint-ia-${key}" type="text" placeholder="FAA IA cert number">
       </div>
       <div class="form-group">
-        <label>AMO / Repair Station</label>
-        <input id="maint-amo-${key}" type="text" placeholder="Shop name or RSRS cert #">
+        <label>AMO / Repair Station (RSRS cert #)</label>
+        <input id="maint-amo-${key}" type="text" placeholder="Shop name or cert number">
       </div>
       <div class="form-group">
-        <label>Airframe Total Hours</label>
+        <label>Airframe Total Time (hours)</label>
         <input id="maint-hours-${key}" type="number" min="0" step="0.1" placeholder="e.g. 3842.5">
       </div>
       <div class="form-group">
-        <label>Engine TSO (hrs since overhaul)</label>
+        <label>Engine Time Since Overhaul (hours)</label>
         <input id="maint-tso-${key}" type="number" min="0" step="0.1" placeholder="e.g. 412.3">
       </div>
       <div class="form-group">
         <label>Parts / Part Numbers Used</label>
-        <input id="maint-parts-${key}" type="text" placeholder="e.g. Lycoming LW-12279, AN960-10">
+        <input id="maint-parts-${key}" type="text" placeholder="e.g. Lycoming LW-12279, AN960-10L">
       </div>
       <div class="form-group full">
-        <label>Work Description / Findings *</label>
+        <label>Work Description / Findings / Return-to-Service Statement *</label>
         <textarea id="maint-desc-${key}" rows="3"
-          placeholder="Describe work performed, findings, corrective actions, and return to airworthy status statement…"></textarea>
+          placeholder="Describe work performed, findings, corrective actions, and return to airworthy status per 14 CFR Part 43 Appendix B…"></textarea>
       </div>
     </div>
 
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <button class="btn btn-gold" onclick="addMaintenanceBlock('${nNum}')">
-        ⛓ Sign &amp; Append to Chain
-      </button>
-      ${hasKey
-        ? `<span style="font-size:.75rem;color:var(--green)">✓ Will be ECDSA-signed with your P-256 keypair</span>`
-        : `<span style="font-size:.75rem;color:var(--orange)">⚠ No keypair — block will be recorded unsigned. Generate a keypair above to enable signing.</span>`}
+      <button class="btn btn-gold" onclick="addMaintenanceBlock('${nNum}')">⛓ Append to Chain</button>
+      <span style="font-size:.75rem;color:var(--muted)">Stored as plaintext public record — no encryption</span>
     </div>
   </div>
 
-  <!-- Existing maintenance blocks -->
-  ${maintBlocks.length === 0
-    ? `<div class="empty" style="padding:2rem"><div class="empty-icon">🔧</div>
-        <h3>No Maintenance Records On Chain</h3>
-        <p>Fill in the form above and click "Sign &amp; Append to Chain" to record the first maintenance block for ${nNum}.</p>
-       </div>`
-    : `<div class="chain-title">Signed Maintenance Blocks (${maintBlocks.length})</div>
-       <div class="chain">
-         ${maintBlocks.map((b, i) => `
-         <div class="block">
-           <div class="block-connector">
-             <div class="block-node maintenance">🔧</div>
-             <div class="block-line${i===maintBlocks.length-1?' last':''}"></div>
-           </div>
-           <div class="block-card maint-record maintenance-block">
-             <div class="block-top">
-               <span class="block-num">#${b.index}</span>
-               <span class="block-type-label maintenance">MAINTENANCE</span>
-               <span class="block-type-label ${b.data.maintType?.includes('Annual')?'genesis':b.data.maintType?.includes('AD')?'accident':'pilot'}"
-                 style="font-size:.65rem">${(b.data.maintType||'').split(' ')[0]||'OTHER'}</span>
-               <span class="sig-verified ${b.data.sigVerified?'ok':'fail'}">${b.data.sigVerified?'✓ ECDSA SIGNED':'UNSIGNED'}</span>
-               <span class="block-ts">${new Date(b.ts).toLocaleString()}</span>
-             </div>
-             <div class="block-body">${renderBlockBody(b)}</div>
-             <div class="block-hashes">
-               <div class="block-hash-row"><span class="hl">HASH&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="hv">${b.hash}</span></div>
-               <div class="block-hash-row"><span class="hl">PREV&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="hv prev">${b.prevHash}</span></div>
-               ${b.data.signature?`<div class="block-hash-row"><span class="hl">SIG&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="sig-display">${b.data.signature}</span></div>`:''}
-               ${b.data.signerPubKey?`<div class="block-hash-row"><span class="hl">PUBKEY&nbsp;&nbsp;</span><span class="hv" style="color:var(--hash)">${b.data.signerPubKey.substring(0,64)}…</span></div>`:''}
-             </div>
-             <div style="margin-top:.5rem">
-               <button class="btn btn-ghost btn-sm" onclick="verifyBlockSig('${nNum}',${b.index})">🔍 Re-verify Signature</button>
-               <button class="btn btn-ghost btn-sm" onclick="exportMaintenanceBlock('${nNum}',${b.index})">⬇ Export Block JSON</button>
-             </div>
-           </div>
-         </div>`).join('')}
-       </div>`}`;
-}
-
-// Re-verify a specific block's ECDSA signature on demand
-async function verifyBlockSig(nNum, blockIndex) {
-  const coin  = mintedCoins[nNum];
-  const block = coin?.chain.find(b => b.index === blockIndex);
-  if (!block || !block.data.signature || !block.data.signerPubKey) {
-    alert('Block has no signature to verify.'); return;
-  }
-  const { signature, signerPubKey, ...dataToVerify } = block.data;
-  const ok = await verifySignature(signerPubKey, dataToVerify, signature);
-  alert(ok
-    ? '✅ ECDSA signature VALID.\nThis block was signed by the holder of the listed public key and has not been tampered with.'
-    : '❌ ECDSA signature INVALID.\nThe block data may have been modified after signing.');
-}
-
-// Export a single maintenance block as JSON for external audit
-function exportMaintenanceBlock(nNum, blockIndex) {
-  const coin  = mintedCoins[nNum];
-  const block = coin?.chain.find(b => b.index === blockIndex);
-  if (!block) return;
-  const payload = { avichain: true, version: '1.0', nNumber: nNum, block, merkleRoot: coin.merkleRoot, exportedAt: new Date().toISOString() };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `avichain-maint-${nNum}-block${blockIndex}.json` });
-  a.click();
-}
+  <!-- Logbook blocks -->
+  ${logbookBlocks.length > 0 ? `
+  <div class="chain-title">Logbook Entry Blocks (${logbookBlocks.length})</div>
+  <div class="chain">${logbookBlocks.map((b,i) => renderMaintBlock(b,i,logbookBlocks.length)).join('')}</div>
+  ` : ''}`;
 
 // ── Kick off ───────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
